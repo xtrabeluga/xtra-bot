@@ -19,7 +19,8 @@ def load_data():
         "users": {},
         "daily": {},
         "clans": {},
-        "user_clan": {}
+        "user_clan": {},
+        "farm_cd": {}
     }
 
 def save_data(data):
@@ -27,17 +28,20 @@ def save_data(data):
         json.dump(data, f)
 
 data = load_data()
+
 users = data["users"]
 daily_cooldown = data["daily"]
 clans = data["clans"]
 user_clan = data["user_clan"]
+farm_cd = data["farm_cd"]
 
 def autosave():
     save_data({
         "users": users,
         "daily": daily_cooldown,
         "clans": clans,
-        "user_clan": user_clan
+        "user_clan": user_clan,
+        "farm_cd": farm_cd
     })
 
 # ---------------- START ----------------
@@ -46,38 +50,22 @@ def autosave():
 def start(message):
     bot.send_message(message.chat.id,
 """
-🤖 XTRA | ELITA BOT
+🔥 XTRA | ELITA BOT
 
-/start — старт
-/help — команды
-/balance — баланс
-/daily — награда
+💰 Экономика:
+/daily — награда каждые 24h
 /work — работа
-/top — топ
 /casino — казино
 /case — кейсы
-/create_clan NAME
-/join_clan NAME
-/my_clan
-""")
+/balance — баланс
 
-# ---------------- HELP ----------------
+👥 Социальное:
+/top — рейтинг игроков
+/create_clan — создать клан
+/join_clan — вступить
+/my_clan — твой клан
 
-@bot.message_handler(commands=['help'])
-def help_cmd(message):
-    bot.send_message(message.chat.id,
-"""
-📌 Команды:
-
-/balance
-/daily
-/work
-/top
-/casino
-/case
-/create_clan
-/join_clan
-/my_clan
+⚡ Активность = деньги!
 """)
 
 # ---------------- BALANCE ----------------
@@ -86,9 +74,9 @@ def help_cmd(message):
 def balance(message):
     uid = str(message.from_user.id)
     users.setdefault(uid, 0)
-    autosave()
 
-    bot.send_message(message.chat.id, f"💰 Баланс: {users[uid]} Coins")
+    bot.send_message(message.chat.id,
+        f"💰 Баланс: {users[uid]} Coins")
 
 # ---------------- DAILY ----------------
 
@@ -96,28 +84,28 @@ def balance(message):
 def daily(message):
     uid = str(message.from_user.id)
     now = time.time()
-    cooldown = 24 * 60 * 60
 
     users.setdefault(uid, 0)
 
+    cooldown = 24 * 60 * 60
+
     if uid in daily_cooldown:
-        if now - daily_cooldown[uid] < cooldown:
-            left = cooldown - (now - daily_cooldown[uid])
+        left = cooldown - (now - daily_cooldown[uid])
+        if left > 0:
             h = int(left // 3600)
             m = int((left % 3600) // 60)
 
             return bot.send_message(message.chat.id,
-                f"⏳ Жди {h}ч {m}м")
+                f"⏳ Уже забрал daily\nПопробуй через {h}ч {m}м")
 
-    reward = 100
-    users[uid] += reward
+    users[uid] += 100
     daily_cooldown[uid] = now
     autosave()
 
     bot.send_message(message.chat.id,
-        f"🎁 +{reward} Coins!")
+        "🎁 +100 Coins (daily)")
 
-# ---------------- WORK + FARM ----------------
+# ---------------- WORK ----------------
 
 @bot.message_handler(commands=['work'])
 def work(message):
@@ -133,36 +121,51 @@ def work(message):
     ]
 
     job, reward = random.choice(jobs)
+
     users[uid] += reward
     autosave()
 
     bot.send_message(message.chat.id,
         f"💼 {job}\n+{reward} Coins")
 
-# 💬 FARM ZA SOOBSHENIYA
-@bot.message_handler(func=lambda m: True)
+# ---------------- FARM (FIXED + ANTI-SPAM) ----------------
+
+@bot.message_handler(func=lambda m: m.text and not m.text.startswith("/"))
 def farm(message):
     uid = str(message.from_user.id)
-
-    if message.text.startswith("/"):
-        return
+    now = time.time()
 
     users.setdefault(uid, 0)
+
+    cooldown = 4 * 60 * 60  # 4 часа
+
+    if uid in farm_cd and now - farm_cd[uid] < cooldown:
+        return
+
+    farm_cd[uid] = now
+
     users[uid] += 2
     autosave()
 
-# ---------------- TOP ----------------
+# ---------------- TOP (CLEAN + NAMES) ----------------
 
 @bot.message_handler(commands=['top'])
 def top(message):
     if not users:
-        return bot.send_message(message.chat.id, "Пусто")
+        return bot.send_message(message.chat.id, "Пока нет игроков")
 
-    top_users = sorted(users.items(), key=lambda x: x[1], reverse=True)[:10]
+    sorted_users = sorted(users.items(), key=lambda x: x[1], reverse=True)[:10]
 
-    text = "🏆 TOP:\n\n"
-    for i, (uid, bal) in enumerate(top_users, 1):
-        text += f"{i}. {uid} — {bal}\n"
+    text = "🏆 TOP XTRA PLAYERS\n\n"
+
+    for i, (uid, bal) in enumerate(sorted_users, 1):
+        try:
+            user = bot.get_chat(uid)
+            name = user.first_name
+        except:
+            name = f"User {uid}"
+
+        text += f"{i}. {name} — {bal} 💰\n"
 
     bot.send_message(message.chat.id, text)
 
@@ -173,24 +176,23 @@ def casino(message):
     uid = str(message.from_user.id)
     users.setdefault(uid, 0)
 
-    bet = 50
-    if users[uid] < bet:
-        return bot.send_message(message.chat.id, "❌ Нужно 50")
+    if users[uid] < 50:
+        return bot.send_message(message.chat.id, "❌ Нужно 50 Coins")
 
-    win_num = random.randint(1, 5)
+    win = random.randint(1, 5)
     guess = random.randint(1, 5)
 
-    if win_num == guess:
+    if win == guess:
         users[uid] += 150
-        res = "WIN +150"
+        result = "🎰 WIN +150"
     else:
-        users[uid] -= bet
-        res = "LOSE -50"
+        users[uid] -= 50
+        result = "💀 LOSE -50"
 
     autosave()
 
     bot.send_message(message.chat.id,
-        f"🎰 {win_num} | {guess}\n{res}")
+        f"🎰 {win} | {guess}\n{result}")
 
 # ---------------- CASES ----------------
 
@@ -200,18 +202,17 @@ def case(message):
     users.setdefault(uid, 0)
 
     if users[uid] < 50:
-        return bot.send_message(message.chat.id, "❌ Нужно 50")
+        return bot.send_message(message.chat.id, "❌ Нужно 50 Coins")
 
     users[uid] -= 50
 
-    rewards = [0, 50, 100, 200, 500]
-    reward = random.choice(rewards)
-
+    reward = random.choice([0, 50, 100, 200, 500])
     users[uid] += reward
+
     autosave()
 
     bot.send_message(message.chat.id,
-        f"🎁 Выпало +{reward}")
+        f"🎁 Кейc\n+{reward} Coins")
 
 # ---------------- CLANS ----------------
 
@@ -221,7 +222,7 @@ def create_clan(message):
     name = message.text.replace("/create_clan", "").strip()
 
     if not name:
-        return bot.send_message(message.chat.id, "Напиши имя")
+        return bot.send_message(message.chat.id, "Напиши: /create_clan NAME")
 
     if name in clans:
         return bot.send_message(message.chat.id, "❌ Уже есть")
@@ -251,13 +252,12 @@ def my_clan(message):
     uid = str(message.from_user.id)
 
     if uid not in user_clan:
-        return bot.send_message(message.chat.id, "Ты без клана")
+        return bot.send_message(message.chat.id, "❌ Ты без клана")
 
     name = user_clan[uid]
-    count = len(clans[name]["members"])
 
     bot.send_message(message.chat.id,
-        f"🏆 {name}\n👥 {count} игроков")
+        f"🏆 Клан: {name}\n👥 {len(clans[name]['members'])} игроков")
 
 # ---------------- RUN ----------------
 
