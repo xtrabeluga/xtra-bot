@@ -9,13 +9,18 @@ bot = telebot.TeleBot(TOKEN)
 
 DATA_FILE = "data.json"
 
-# ---------------- UI ----------------
-BORDER = "━━━━━━━━━━━━━━"
+# ================= UI =================
 
 def panel(title, text):
-    return f"{BORDER}\n{title}\n{BORDER}\n{text}\n{BORDER}"
+    return (
+        "━━━━━━━━━━━━━━\n"
+        f"🔥 {title} 🔥\n"
+        "━━━━━━━━━━━━━━\n"
+        f"{text}\n"
+        "━━━━━━━━━━━━━━"
+    )
 
-# ---------------- DATA ----------------
+# ================= DATA =================
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -37,22 +42,25 @@ def save_data():
 data = load_data()
 
 users = data["users"]
-daily_cooldown = data["daily"]
+daily_cd = data["daily"]
 clans = data["clans"]
 user_clan = data["user_clan"]
 farm_cd = data["farm_cd"]
 cooldowns = data["cooldowns"]
 
+# ================= SETTINGS =================
+
+WORK_CD = 60
+CASINO_CD = 60
+
+# ================= HELPERS =================
+
 def autosave():
     save_data()
 
-# ---------------- HELPERS ----------------
-
 def check_cd(uid, action, cd):
     now = time.time()
-
     cooldowns.setdefault(uid, {})
-
     last = cooldowns[uid].get(action, 0)
 
     if now - last < cd:
@@ -62,15 +70,26 @@ def check_cd(uid, action, cd):
     autosave()
     return True, 0
 
-# ---------------- START ----------------
+def add_money(uid, amount):
+    users.setdefault(uid, 0)
+    users[uid] += amount
+    autosave()
+
+# ================= START =================
 
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.send_message(message.chat.id,
-        panel("🔥 XTRA | ELITA",
-              "/balance\n/daily\n/work\n/casino\n/case\n/shop\n\n🏆 Clans + Economy"))
+        panel("XTRA | ELITA",
+        "💰 /balance — баланс\n"
+        "🎁 /daily — награда\n"
+        "💼 /work — работа\n"
+        "🎰 /casino — казино\n"
+        "📦 /shop — кейсы\n"
+        "🎮 /open_case\n\n"
+        "🏆 Кланы\n⚡ Фарм монет\n🔥 Играй и зарабатывай"))
 
-# ---------------- BALANCE ----------------
+# ================= BALANCE =================
 
 @bot.message_handler(commands=['balance'])
 def balance(message):
@@ -78,93 +97,74 @@ def balance(message):
     users.setdefault(uid, 0)
 
     bot.send_message(message.chat.id,
-        panel("💰 BALANCE",
-              f"👤 {message.from_user.first_name}\n💰 {users[uid]} Coins"))
+        panel("ПРОФИЛЬ ИГРОКА",
+        f"👤 {message.from_user.first_name}\n"
+        f"💰 Баланс: {users[uid]} Coins"))
 
-# ---------------- DAILY ----------------
+# ================= DAILY =================
 
 @bot.message_handler(commands=['daily'])
 def daily(message):
     uid = str(message.from_user.id)
-    users.setdefault(uid, 0)
-
     now = time.time()
-    cooldown = 86400
 
-    if uid in daily_cooldown and now - daily_cooldown[uid] < cooldown:
-        left = cooldown - (now - daily_cooldown[uid])
+    if uid in daily_cd and now - daily_cd[uid] < 86400:
+        left = 86400 - (now - daily_cd[uid])
         return bot.send_message(message.chat.id,
-            panel("⏳ DAILY", f"Жди {int(left//3600)}ч"))
+            panel("DAILY REWARD",
+            f"⏳ Уже забрал\nОсталось: {int(left//3600)} часов"))
 
-    users[uid] += 70
-    daily_cooldown[uid] = now
+    add_money(uid, 70)
+    daily_cd[uid] = now
     autosave()
 
     bot.send_message(message.chat.id,
-        panel("🎁 DAILY", "+70 Coins"))
+        panel("DAILY",
+        "🎁 +70 Coins"))
 
-# ---------------- WORK ----------------
+# ================= WORK =================
 
 @bot.message_handler(commands=['work'])
 def work(message):
     uid = str(message.from_user.id)
-    users.setdefault(uid, 0)
 
-    ok, wait = check_cd(uid, "work", 1800)
-
+    ok, wait = check_cd(uid, "work", WORK_CD)
     if not ok:
         return bot.send_message(message.chat.id,
-            panel("⏳ WORK", f"{wait//60} мин"))
+            panel("WORK",
+            f"⏳ Подожди {wait} сек"))
 
     jobs = [
-        ("шахтёр ⛏", 50),
-        ("курьер 🚴", 40),
-        ("программист 💻", 120),
-        ("таксист 🚕", 60),
-        ("бандит 🔫", 150)
+        ("⛏ Шахтёр", 50),
+        ("🚕 Таксист", 60),
+        ("💻 Программист", 120),
+        ("🚴 Курьер", 40),
+        ("🔫 Бандит", 150)
     ]
 
     job, reward = random.choice(jobs)
-
-    users[uid] += reward
-    autosave()
+    add_money(uid, reward)
 
     bot.send_message(message.chat.id,
-        panel("💼 WORK", f"{job}\n+{reward} Coins"))
+        panel("РАБОТА",
+        f"{job}\n💰 +{reward} Coins"))
 
-# ---------------- FARM ----------------
-
-@bot.message_handler(func=lambda m: m.text and not m.text.startswith("/"))
-def farm(message):
-    uid = str(message.from_user.id)
-    users.setdefault(uid, 0)
-
-    now = time.time()
-    cooldown = 14400
-
-    if uid in farm_cd and now - farm_cd[uid] < cooldown:
-        return
-
-    farm_cd[uid] = now
-    users[uid] += 2
-    autosave()
-
-# ---------------- CASINO ----------------
+# ================= CASINO =================
 
 @bot.message_handler(commands=['casino'])
 def casino(message):
     uid = str(message.from_user.id)
-    users.setdefault(uid, 0)
 
-    ok, wait = check_cd(uid, "casino", 3600)
-
+    ok, wait = check_cd(uid, "casino", CASINO_CD)
     if not ok:
         return bot.send_message(message.chat.id,
-            panel("🎰 CASINO", f"{wait//60} мин"))
+            panel("CASINO",
+            f"⏳ {wait} сек"))
 
-    if users[uid] < 50:
+    if users.get(uid, 0) < 50:
         return bot.send_message(message.chat.id,
-            panel("❌ CASINO", "Нужно 50 Coins"))
+            panel("CASINO",
+            "❌ Нужно 50 Coins"))
 
     users[uid] -= 50
 
@@ -173,51 +173,26 @@ def casino(message):
 
     if a == b:
         users[uid] += 150
-        result = "🎉 WIN +150"
+        result = "🎉 ВЫИГРАЛ +150"
     else:
-        result = "💀 LOSE"
+        result = "💀 ПРОИГРАЛ"
 
     autosave()
 
     bot.send_message(message.chat.id,
-        panel("🎰 CASINO", f"{a} | {b}\n{result}"))
+        panel("CASINO",
+        f"{a} | {b}\n{result}"))
 
-# ---------------- CASE ----------------
-
-@bot.message_handler(commands=['case'])
-def case(message):
-    uid = str(message.from_user.id)
-    users.setdefault(uid, 0)
-
-    ok, wait = check_cd(uid, "case", 7200)
-
-    if not ok:
-        return bot.send_message(message.chat.id,
-            panel("📦 CASE", f"{wait//60} мин"))
-
-    if users[uid] < 100:
-        return bot.send_message(message.chat.id,
-            panel("❌ CASE", "Нужно 100 Coins"))
-
-    users[uid] -= 100
-
-    reward = random.choice([0, 50, 100, 200, 500])
-    users[uid] += reward
-
-    autosave()
-
-    bot.send_message(message.chat.id,
-        panel("📦 CASE", f"+{reward} Coins"))
-
-# ---------------- SHOP ----------------
+# ================= SHOP =================
 
 @bot.message_handler(commands=['shop'])
 def shop(message):
     bot.send_message(message.chat.id,
-        panel("🛒 SHOP",
-              "bronze / 50\nelite / 100\nxtra / 200"))
-
-# ---------------- BUY ----------------
+        panel("МАГАЗИН КЕЙСОВ",
+        "🥉 bronze — 50\n"
+        "🥈 elite — 100\n"
+        "💎 xtra — 200\n\n"
+        "👉 /buy <name>"))
 
 @bot.message_handler(commands=['buy'])
 def buy(message):
@@ -241,9 +216,26 @@ def buy(message):
 
     if users[uid] < prices[case]:
         return bot.send_message(message.chat.id,
-            panel("❌ SHOP", "Нет денег"))
+            panel("МАГАЗИН", "❌ Недостаточно монет"))
 
     users[uid] -= prices[case]
+    autosave()
+
+    bot.send_message(message.chat.id,
+        panel("ПОКУПКА",
+        f"{case.upper()} куплен!\n👉 /open_case {case}"))
+
+# ================= OPEN CASE =================
+
+@bot.message_handler(commands=['open_case'])
+def open_case(message):
+    uid = str(message.from_user.id)
+
+    args = message.text.split()
+    if len(args) < 2:
+        return
+
+    case = args[1]
 
     rewards = {
         "bronze": (20, 150),
@@ -251,68 +243,30 @@ def buy(message):
         "xtra": (150, 700)
     }
 
+    if case not in rewards:
+        return
+
     reward = random.randint(*rewards[case])
-    users[uid] += reward
-
-    autosave()
+    add_money(uid, reward)
 
     bot.send_message(message.chat.id,
-        panel("📦 OPENED",
-              f"{case.upper()} +{reward}"))
+        panel("ОТКРЫТИЕ КЕЙСА",
+        f"📦 {case.upper()}\n💰 +{reward} Coins"))
 
-# ---------------- CLANS ----------------
+# ================= FARM =================
 
-@bot.message_handler(commands=['create_clan'])
-def create_clan(message):
-    uid = str(message.from_user.id)
-    name = message.text.replace("/create_clan", "").strip()
-
-    if not name:
-        return bot.send_message(message.chat.id,
-            panel("❌ CLAN", "Напиши имя"))
-
-    if name in clans:
-        return bot.send_message(message.chat.id,
-            panel("❌ CLAN", "Уже существует"))
-
-    clans[name] = {"leader": uid, "members": [uid]}
-    user_clan[uid] = name
-    autosave()
-
-    bot.send_message(message.chat.id,
-        panel("🏆 CLAN", f"{name} создан"))
-
-@bot.message_handler(commands=['join_clan'])
-def join_clan(message):
-    uid = str(message.from_user.id)
-    name = message.text.replace("/join_clan", "").strip()
-
-    if name not in clans:
-        return bot.send_message(message.chat.id,
-            panel("❌ CLAN", "Нет клана"))
-
-    clans[name]["members"].append(uid)
-    user_clan[uid] = name
-    autosave()
-
-    bot.send_message(message.chat.id,
-        panel("🏆 CLAN", f"Ты в {name}"))
-
-@bot.message_handler(commands=['my_clan'])
-def my_clan(message):
+@bot.message_handler(func=lambda m: m.text and not m.text.startswith("/"))
+def farm(message):
     uid = str(message.from_user.id)
 
-    if uid not in user_clan:
-        return bot.send_message(message.chat.id,
-            panel("❌ CLAN", "Нет клана"))
+    now = time.time()
+    if uid in farm_cd and now - farm_cd[uid] < 14400:
+        return
 
-    name = user_clan[uid]
+    farm_cd[uid] = now
+    add_money(uid, 2)
 
-    bot.send_message(message.chat.id,
-        panel("🏆 CLAN",
-              f"{name}\n👥 {len(clans[name]['members'])} игроков"))
+# ================= RUN =================
 
-# ---------------- RUN ----------------
-
-print("XTRA BOT RUNNING...")
+print("🔥 XTRA | ELITA RUNNING...")
 bot.infinity_polling(skip_pending=True)
