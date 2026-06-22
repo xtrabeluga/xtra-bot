@@ -1,7 +1,7 @@
 import telebot
 import os
 
-TOKEN = os.getenv("8728701834:AAHRAB4hHJglxK87euGfJ-PbuIjzxbZ9kJM")  # токен берётся с Render
+TOKEN = os.getenv("TOKEN")  # токен берётся с Render
 
 bot = telebot.TeleBot(TOKEN)
 
