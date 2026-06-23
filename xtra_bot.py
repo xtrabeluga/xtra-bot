@@ -1104,23 +1104,51 @@ save_data(data)
 
 print("XTRA ELITA PRO ONLINE")
 
-# 🔥 FIX 409 CONFLICT
-bot.remove_webhook()
-time.sleep(1)
+# =========================
+# PRODUCTION START (MUST BE LAST)
+# =========================
 
 from flask import Flask
 import threading
+import time
+import os
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "XTRA ELITA ONLINE"
+    return "XTRA ELITA PRO ONLINE"
+
+@app.route("/health")
+def health():
+    return "OK"
+
 
 def run_bot():
-    bot.infinity_polling(skip_pending=True)
+    while True:
+        try:
+            print("BOT STARTED")
 
-threading.Thread(target=run_bot).start()
+            bot.remove_webhook()
 
-port = int(os.environ.get("PORT", 10000))
-app.run(host="0.0.0.0", port=port)
+            bot.infinity_polling(
+                skip_pending=True,
+                timeout=60,
+                long_polling_timeout=60
+            )
+
+        except Exception as e:
+            print("BOT ERROR:", e)
+            time.sleep(5)
+
+
+if __name__ == "__main__":
+
+    threading.Thread(target=run_bot, daemon=True).start()
+
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
