@@ -138,16 +138,22 @@ def start(message):
 
 @bot.message_handler(commands=["help"])
 def help_cmd(message):
+
+    text = ""
+
+    for category, cmds in COMMANDS.items():
+        text += f"{category}\n"
+
+        for cmd, desc in cmds.items():
+            text += f" /{cmd} — {desc}\n"
+
+        text += "\n"
+
     bot.reply_to(
         message,
         panel(
-            "СПИСОК КОМАНД",
-            "/profile - профиль\n"
-            "/balance - баланс\n"
-            "/daily - ежедневная награда\n"
-            "/farm - заработать монеты\n"
-            "/pay ID СУММА - перевод\n"
-            "/top - топ игроков"
+            "📜 HELP MENU",
+            text
         )
     )
 
@@ -414,6 +420,39 @@ SHOP_ITEMS = {
     "case": {
         "name": "Кейс",
         "price": 3000
+    }
+}
+
+COMMANDS = {
+    "👤 ИГРОК": {
+        "profile": "Профиль",
+        "balance": "Баланс",
+        "daily": "Ежедневная награда",
+        "rep": "Выдать репутацию",
+        "myrep": "Моя репутация"
+    },
+
+    "⛏ ФАРМ / ИГРЫ": {
+        "farm": "Фарм монет",
+        "casino": "Казино",
+        "top": "Топ богатых",
+        "reptop": "Топ репутации"
+    },
+
+    "🛒 МАГАЗИН": {
+        "shop": "Магазин",
+        "buy": "Купить предмет",
+        "inventory": "Инвентарь"
+    },
+
+    "🎁 КЕЙСЫ": {
+        "cases": "Мои кейсы",
+        "open": "Открыть кейс"
+    },
+
+    "💸 ПЕРЕВОДЫ": {
+        "pay": "Перевод монет",
+        "userinfo": "Информация о игроке"
     }
 }
 
