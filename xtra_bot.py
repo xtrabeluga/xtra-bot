@@ -15,6 +15,8 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
+bot.remove_webhook()
+
 DATA_FILE = "data.json"
 
 
