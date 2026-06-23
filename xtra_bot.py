@@ -1,342 +1,183 @@
+
+import os, json, time, random
+from flask import Flask, request
 import telebot
-import time
-import json
-import random
-import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv("TOKEN")
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL","")
+
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
 DATA_FILE = "data.json"
-
-# ================= ADMIN =================
 ADMIN_USERNAME = "xtra_beluga"
 
+LEVELS = ["Новичок","Игрок","Опытный","Профи","Элитный","Легенда","БОГ XTRA"]
 
-def is_admin(user):
-    return user.username == ADMIN_USERNAME
-
-
-# ================= SAFE DATA =================
 def default_data():
-    return {
-        "users": {},
-        "xp": {},
-        "messages": {},
-        "cases": {},
-        "last_xp": {}
-    }
+    return {"users":{}, "xp":{}, "messages":{}, "cases":{}, "last_xp":{}, "names":{}}
 
-
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return default_data()
-
+def load():
     try:
-        with open(DATA_FILE, "r") as f:
+        with open(DATA_FILE,"r",encoding="utf-8") as f:
             return json.load(f)
     except:
         return default_data()
 
+data = load()
 
-def save_data():
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except:
-        pass
+def save():
+    with open(DATA_FILE,"w",encoding="utf-8") as f:
+        json.dump(data,f,ensure_ascii=False,indent=2)
 
-
-data = load_data()
-
-
-# ================= LEVELS =================
-LEVEL_NAMES = [
-    "Новичок", "Игрок", "Опытный",
-    "Профи", "Элитный", "Легенда", "БОГ XTRA"
-]
-
-
-def get_level(xp):
-    lvl = xp // 100
-    return LEVEL_NAMES[min(lvl, len(LEVEL_NAMES) - 1)], lvl
-
-
-# ================= STYLE =================
-def panel(title, text):
-    return f"""🔥 {title} 🔥
-
-{text}
-
-━━━━━━━━━━━━━━━
-⚡ XTRA | ELITA
-"""
-
-
-# ================= USER =================
 def get_user(user):
-    uid = str(user.id)
-
-    if uid not in data["users"]:
-        data["users"][uid] = 100
-        data["xp"][uid] = 0
-        data["messages"][uid] = 0
-        data["cases"][uid] = []
-        data["last_xp"][uid] = 0
-
+    uid=str(user.id)
+    data["users"].setdefault(uid,100)
+    data["xp"].setdefault(uid,0)
+    data["messages"].setdefault(uid,0)
+    data["cases"].setdefault(uid,[])
+    data["last_xp"].setdefault(uid,0)
+    data["names"][uid]="@"+user.username if user.username else user.first_name
     return uid
 
+def is_admin(user):
+    return bool(user.username and user.username.lower()==ADMIN_USERNAME.lower())
 
-def name(user):
-    return f"@{user.username}" if user.username else user.first_name
+def level_name(xp):
+    lvl=xp//100
+    return lvl, LEVELS[min(lvl,len(LEVELS)-1)]
 
+def panel(t,x):
+    return f"🔥 {t} 🔥\n\n{x}\n\n━━━━━━━━━━━━━━\n⚡ XTRA | ELITA"
 
-# ================= XP ANTI-SPAM =================
-@bot.message_handler(func=lambda m: True)
-def xp_system(message):
-    if not message.from_user:
-        return
-
-    uid = get_user(message.from_user)
-
-    now = time.time()
-    last = data["last_xp"].get(uid, 0)
-
-    if now - last < 10:
-        return
-
-    data["xp"][uid] += 1
-    data["messages"][uid] += 1
-    data["last_xp"][uid] = now
-
-    save_data()
-
-
-# ================= CASE OPEN (NO FREEZE VERSION) =================
-def open_case_result(chat_id, message_id, case, uid):
-    rewards = {
-        "bronze": (50, 120),
-        "elite": (100, 250),
-        "xtra": (200, 500)
-    }
-
-    reward = random.randint(*rewards.get(case, (50, 100)))
-
-    data["users"][uid] += reward
-    data["xp"][uid] += 10
-    save_data()
-
-    bot.edit_message_text(
-        f"🎉 Кейс открыт!\n💰 +{reward} монет",
-        chat_id,
-        message_id
-    )
-
-
-def open_case_animation(chat_id, case, uid):
-    msg = bot.send_message(chat_id, "🎁 Открытие кейса...")
-
-    frames = [
-        "🎁 ▓░░░░░░░░ 10%",
-        "🎁 ▓▓▓░░░░░░ 30%",
-        "🎁 ▓▓▓▓▓░░░░ 60%",
-        "🎁 ▓▓▓▓▓▓▓░░ 90%",
-        "💥 ЛОТЕРЕЯ ЗАПУЩЕНА..."
-    ]
-
-    for f in frames:
-        try:
-            bot.edit_message_text(f, chat_id, msg.message_id)
-            time.sleep(0.5)
-        except:
-            pass
-
-    open_case_result(chat_id, msg.message_id, case, uid)
-
-
-# ================= MAIN MENU =================
-def main_menu(user):
-    kb = telebot.types.InlineKeyboardMarkup()
-
-    kb.add(
-        telebot.types.InlineKeyboardButton("🎮 Игры", callback_data="games"),
-        telebot.types.InlineKeyboardButton("🛒 Магазин", callback_data="shop")
-    )
-    kb.add(
-        telebot.types.InlineKeyboardButton("👤 Профиль", callback_data="profile"),
-        telebot.types.InlineKeyboardButton("🏆 Топы", callback_data="tops")
-    )
-
+def menu(user):
+    kb=InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🎮 Игры",callback_data="games"),
+           InlineKeyboardButton("🛒 Магазин",callback_data="shop"))
+    kb.add(InlineKeyboardButton("👤 Профиль",callback_data="profile"),
+           InlineKeyboardButton("🏆 Топы",callback_data="tops"))
     if is_admin(user):
-        kb.add(telebot.types.InlineKeyboardButton("👑 ADMIN", callback_data="admin"))
-
+        kb.add(InlineKeyboardButton("👑 ADMIN",callback_data="admin"))
     return kb
 
-
-def games_menu():
-    kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(
-        telebot.types.InlineKeyboardButton("💼 Работа", callback_data="work"),
-        telebot.types.InlineKeyboardButton("🎰 Казино", callback_data="casino")
-    )
-    kb.add(telebot.types.InlineKeyboardButton("⬅ Назад", callback_data="back"))
-    return kb
-
-
-def shop_menu():
-    kb = telebot.types.InlineKeyboardMarkup()
-    kb.add(
-        telebot.types.InlineKeyboardButton("🥉 Bronze", callback_data="buy_bronze"),
-        telebot.types.InlineKeyboardButton("🥈 Elite", callback_data="buy_elite"),
-    )
-    kb.add(
-        telebot.types.InlineKeyboardButton("💎 XTRA", callback_data="buy_xtra")
-    )
-    kb.add(telebot.types.InlineKeyboardButton("⬅ Назад", callback_data="back"))
-    return kb
-
-
-def admin_panel():
-    kb = telebot.types.InlineKeyboardMarkup()
-
-    kb.add(
-        telebot.types.InlineKeyboardButton("💰 +1000", callback_data="adm_money"),
-        telebot.types.InlineKeyboardButton("⭐ +500 XP", callback_data="adm_xp")
-    )
-    kb.add(
-        telebot.types.InlineKeyboardButton("💀 RANDOM CHAOS", callback_data="adm_chaos"),
-        telebot.types.InlineKeyboardButton("😂 TROLL MODE", callback_data="adm_troll")
-    )
-    kb.add(telebot.types.InlineKeyboardButton("⬅ назад", callback_data="back"))
-
-    return kb
-
-
-# ================= START =================
 @bot.message_handler(commands=["start"])
-def start(message):
-    get_user(message.from_user)
+def start(m):
+    get_user(m.from_user)
+    save()
+    bot.send_message(m.chat.id,panel("XTRA | ELITA","Добро пожаловать!"),reply_markup=menu(m.from_user))
 
-    bot.send_message(
-        message.chat.id,
-        panel("XTRA | ELITA", "Добро пожаловать в PRO систему"),
-        reply_markup=main_menu(message.from_user)
-    )
-
-
-# ================= OPEN CASE =================
 @bot.message_handler(commands=["open_case"])
-def open_case(message):
-    uid = get_user(message.from_user)
-
-    args = message.text.split()
-    if len(args) < 2:
-        bot.reply_to(message, "❌ /open_case bronze|elite|xtra")
-        return
-
-    case = args[1]
-
+def open_case(m):
+    uid=get_user(m.from_user)
+    p=m.text.split()
+    if len(p)<2:
+        return bot.reply_to(m,"/open_case bronze|elite|xtra")
+    case=p[1].lower()
     if case not in data["cases"][uid]:
-        bot.reply_to(message, "❌ кейса нет")
-        return
-
+        return bot.reply_to(m,"❌ Кейса нет")
     data["cases"][uid].remove(case)
-    save_data()
+    rewards={"bronze":(50,120),"elite":(100,250),"xtra":(200,500)}
+    reward=random.randint(*rewards[case])
+    data["users"][uid]+=reward
+    data["xp"][uid]+=10
+    save()
+    bot.reply_to(m,f"🎁 Кейс открыт!\n💰 +{reward} монет")
 
-    open_case_animation(message.chat.id, case, uid)
+@bot.message_handler(func=lambda m: True)
+def xp_system(m):
+    if m.text and m.text.startswith("/"):
+        return
+    uid=get_user(m.from_user)
+    now=time.time()
+    if now-data["last_xp"][uid] >= 10:
+        data["xp"][uid]+=1
+        data["messages"][uid]+=1
+        data["last_xp"][uid]=now
+        save()
 
+@bot.callback_query_handler(func=lambda c: True)
+def cb(c):
+    uid=get_user(c.from_user)
 
-# ================= CALLBACK =================
-@bot.callback_query_handler(func=lambda call: True)
-def cb(call):
-    uid = get_user(call.from_user)
+    if c.data=="profile":
+        lvl,name=level_name(data["xp"][uid])
+        txt=f"👤 {data['names'][uid]}\n💰 {data['users'][uid]}\n⭐ {data['xp'][uid]}\n📊 {lvl} ({name})\n💬 {data['messages'][uid]}"
+        return bot.edit_message_text(panel("ПРОФИЛЬ",txt),c.message.chat.id,c.message.message_id,reply_markup=menu(c.from_user))
 
-    if call.data == "back":
-        bot.edit_message_text(panel("XTRA | ELITA", "Главное меню"),
-                              call.message.chat.id,
-                              call.message.message_id,
-                              reply_markup=main_menu(call.from_user))
+    if c.data=="tops":
+        top=sorted(data["users"].items(),key=lambda x:x[1],reverse=True)[:5]
+        txt="\n".join([f"{i+1}. {data['names'].get(u,u)} — {v}" for i,(u,v) in enumerate(top)])
+        return bot.edit_message_text(panel("ТОП БАЛАНС",txt),c.message.chat.id,c.message.message_id,reply_markup=menu(c.from_user))
 
-    elif call.data == "profile":
-        xp = data["xp"][uid]
-        coins = data["users"][uid]
-        msgs = data["messages"][uid]
+    if c.data=="games":
+        kb=InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("💼 Работа",callback_data="work"),
+               InlineKeyboardButton("🎰 Казино",callback_data="casino"))
+        return bot.send_message(c.message.chat.id,"🎮 Игры",reply_markup=kb)
 
-        lvl_name, lvl = get_level(xp)
+    if c.data=="shop":
+        kb=InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🥉 Bronze 50",callback_data="buy_bronze"))
+        kb.add(InlineKeyboardButton("🥈 Elite 100",callback_data="buy_elite"))
+        kb.add(InlineKeyboardButton("💎 XTRA 200",callback_data="buy_xtra"))
+        return bot.send_message(c.message.chat.id,"🛒 Магазин",reply_markup=kb)
 
-        text = f"""
-👤 {name(call.from_user)}
+    if c.data=="work":
+        reward=random.randint(40,150)
+        data["users"][uid]+=reward
+        data["xp"][uid]+=20
+        save()
+        return bot.answer_callback_query(c.id,f"+{reward} 💰")
 
-💰 Баланс: {coins}
-⭐ XP: {xp}
-📊 Уровень: {lvl} ({lvl_name})
-💬 Сообщений: {msgs}
-"""
+    if c.data=="casino":
+        if data["users"][uid] < 50:
+            return bot.answer_callback_query(c.id,"Нет денег")
+        data["users"][uid]-=50
+        if random.randint(1,100)<=45:
+            data["users"][uid]+=150
+            data["xp"][uid]+=10
+            save()
+            return bot.answer_callback_query(c.id,"🎉 +150")
+        save()
+        return bot.answer_callback_query(c.id,"💀 Проигрыш")
 
-        bot.edit_message_text(panel("ПРОФИЛЬ", text),
-                              call.message.chat.id,
-                              call.message.message_id,
-                              reply_markup=main_menu(call.from_user))
+    if c.data.startswith("buy_"):
+        case=c.data.split("_")[1]
+        prices={"bronze":50,"elite":100,"xtra":200}
+        if data["users"][uid] < prices[case]:
+            return bot.answer_callback_query(c.id,"Недостаточно монет")
+        data["users"][uid]-=prices[case]
+        data["cases"][uid].append(case)
+        save()
+        return bot.answer_callback_query(c.id,"🎁 Куплено")
 
-    elif call.data == "admin":
-        if not is_admin(call.from_user):
-            bot.answer_callback_query(call.id, "⛔ нет доступа")
-            return
+    if c.data=="admin" and is_admin(c.from_user):
+        kb=InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("💰 +1000",callback_data="adm_money"))
+        kb.add(InlineKeyboardButton("⭐ +500 XP",callback_data="adm_xp"))
+        return bot.send_message(c.message.chat.id,"👑 Админка",reply_markup=kb)
 
-        bot.edit_message_text(panel("👑 ADMIN PANEL", "добро пожаловать босс 😈"),
-                              call.message.chat.id,
-                              call.message.message_id,
-                              reply_markup=admin_panel())
+    if c.data=="adm_money" and is_admin(c.from_user):
+        data["users"][uid]+=1000; save()
+        return bot.answer_callback_query(c.id,"Выдано 1000")
 
-    elif call.data == "adm_money":
-        if is_admin(call.from_user):
-            data["users"][uid] += 1000
-            save_data()
-            bot.answer_callback_query(call.id, "+1000 💰")
+    if c.data=="adm_xp" and is_admin(c.from_user):
+        data["xp"][uid]+=500; save()
+        return bot.answer_callback_query(c.id,"Выдано 500 XP")
 
-    elif call.data == "adm_xp":
-        if is_admin(call.from_user):
-            data["xp"][uid] += 500
-            save_data()
-            bot.answer_callback_query(call.id, "+500 XP")
+@app.route("/")
+def home():
+    return "XTRA ELITA BOT ONLINE"
 
-    elif call.data == "adm_chaos":
-        if is_admin(call.from_user):
-            data["users"][uid] = random.randint(0, 9999)
-            save_data()
-            bot.answer_callback_query(call.id, "💀 chaos")
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update=telebot.types.Update.de_json(request.get_data().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "ok"
 
-    elif call.data == "adm_troll":
-        if is_admin(call.from_user):
-            bot.answer_callback_query(call.id, "😂 ты теперь легенда")
-
-    elif call.data == "work":
-        reward = random.randint(40, 150)
-        data["users"][uid] += reward
-        data["xp"][uid] += 20
-        save_data()
-        bot.answer_callback_query(call.id, f"+{reward}")
-
-    elif call.data == "casino":
-        bet = 50
-
-        if data["users"][uid] < bet:
-            bot.answer_callback_query(call.id, "❌ нет денег")
-            return
-
-        data["users"][uid] -= bet
-
-        if random.randint(1, 100) <= 45:
-            win = 150
-            data["users"][uid] += win
-            data["xp"][uid] += 10
-            bot.answer_callback_query(call.id, f"+{win} 🎉")
-        else:
-            bot.answer_callback_query(call.id, "💀 lose")
-
-        save_data()
-
-
-# ================= RUN =================
-print("🔥 PRO XTRA BOT STARTED")
-bot.infinity_polling(skip_pending=True)
+if __name__ == "__main__":
+    if TOKEN and RENDER_EXTERNAL_URL:
+        bot.remove_webhook()
+        bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{TOKEN}")
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT",10000)))
