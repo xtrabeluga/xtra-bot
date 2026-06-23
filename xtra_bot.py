@@ -28,6 +28,9 @@ def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
+
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 			
 def find_user_id(identifier):
     identifier = str(identifier).replace("@", "").lower()
