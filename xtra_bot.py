@@ -60,9 +60,9 @@ def create_user(user):
             "cases": 0,
 			
             "wins": 0,
-            "loses": 0
+            "loses": 0,
 			
-			"rep": 0
+			"rep": 0,
         }
 
         save_data(data)
