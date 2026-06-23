@@ -1,279 +1,185 @@
-import os
+import telebot
 import time
 import json
-import logging
-import re
-import telebot
-from flask import Flask, request
+import os
+import random
+from threading import Lock
 
-# ================= LOG =================
-logging.basicConfig(level=logging.INFO)
-
-# ================= ENV =================
+# ===================== CONFIG =====================
 TOKEN = os.getenv("TOKEN")
-BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
-PORT = int(os.getenv("PORT", 10000))
+bot = telebot.TeleBot(TOKEN)
 
-if not TOKEN:
-    raise Exception("TOKEN not set")
+DATA_FILE = "xtra_data.json"
+lock = Lock()
 
-# ================= REDIS =================
-try:
-    import redis
-    REDIS_URL = os.getenv("REDIS_URL")
-    r = redis.from_url(REDIS_URL) if REDIS_URL else None
-except:
-    r = None
+# ===================== LOAD DATA =====================
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-# ================= DB =================
-DB_FILE = "db.json"
+def save_data(data):
+    with lock:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        return json.load(open(DB_FILE, "r", encoding="utf-8"))
-    return {}
+data = load_data()
 
-def save_db(db):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(db, f, indent=2)
+# ===================== UTIL =====================
+def get_user(user_id):
+    uid = str(user_id)
+    if uid not in data:
+        data[uid] = {
+            "balance": 0,
+            "last_daily": 0,
+            "last_farm": 0,
+            "wins": 0,
+            "games": 0
+        }
+        save_data(data)
+    return data[uid]
 
-db = load_db()
+def save():
+    save_data(data)
 
-# ================= USER SYSTEM =================
-def get_user(uid):
-    uid = str(uid)
+def format_money(x):
+    return f"{x:,}".replace(",", " ")
 
-    if r:
-        try:
-            data = r.get(uid)
-            if not data:
-                return {}
-            if isinstance(data, bytes):
-                data = data.decode()
-            return json.loads(data)
-        except:
-            return {}
-
-    return db.get(uid, {})
-
-def set_user(uid, data):
-    uid = str(uid)
-
-    if r:
-        try:
-            r.set(uid, json.dumps(data))
-        except:
-            pass
-    else:
-        db[uid] = data
-        save_db(db)
-
-# ================= BOT =================
-bot = telebot.TeleBot(TOKEN, threaded=True, skip_pending=True)
-app = Flask(__name__)
-
-# ================= ANTI SPAM =================
-spam = {}
-
-def anti_spam(uid):
-    now = time.time()
-    if uid in spam and now - spam[uid] < 2:
-        return False
-    spam[uid] = now
-    return True
-
-# ================= XP SYSTEM =================
-def add_xp(uid, amount=10):
-    user = get_user(uid)
-    user.setdefault("xp", 0)
-    user.setdefault("lvl", 1)
-
-    user["xp"] += amount
-
-    if user["xp"] >= user["lvl"] * 100:
-        user["xp"] = 0
-        user["lvl"] += 1
-
-    set_user(uid, user)
-
-# ================= SAFE =================
-def safe(fn):
-    def wrapper(m):
-        try:
-            if not m or not m.from_user:
-                return
-            if not anti_spam(m.from_user.id):
-                return
-            add_xp(m.from_user.id)
-            return fn(m)
-        except Exception as e:
-            logging.error(e)
-    return wrapper
-
-# ================= UI =================
-def panel(title, text):
-    return f"""
-━━━━━━━━━━━━━━
-🔥 {title}
-━━━━━━━━━━━━━━
-{text}
-━━━━━━━━━━━━━━
-"""
-
-# ================= PROFILE =================
+# ===================== START =====================
 @bot.message_handler(commands=['start'])
-@safe
-def start(m):
-    uid = str(m.from_user.id)
-    user = get_user(uid)
+def start(message):
+    u = get_user(message.from_user.id)
 
-    user.setdefault("money", 1000)
-    user.setdefault("xp", 0)
-    user.setdefault("lvl", 1)
-    user.setdefault("inventory", [])
-    user.setdefault("married", False)
+    bot.send_message(message.chat.id, f"""
+🔥 XTRA ELITA 🔥
 
-    set_user(uid, user)
+💰 Баланс: {format_money(u['balance'])} XTRA
 
-    bot.send_message(m.chat.id, panel("XTRA ELITA RP", "Добро пожаловать в RP мир!\n/help"))
+Команды:
+/farm — фарм XTRA
+/daily — награда
+/roulette <ставка> — казино
+/profile — профиль
+/top — топ
+""")
 
-# ================= HELP =================
-@bot.message_handler(commands=['help'])
-@safe
-def help_cmd(m):
-    bot.send_message(m.chat.id, panel("КОМАНДЫ",
-"""
-💰 /balance
-⭐ /xp
-👤 /profile
-💍 /marry /divorce
-🎒 /inventory
-💸 /daily
+# ===================== FARM =====================
+@bot.message_handler(commands=['farm'])
+def farm(message):
+    u = get_user(message.from_user.id)
+    now = time.time()
 
-💬 RP чат:
-обнять @user
-ударить @user
-поцеловать @user
-украсть @user
-"""))
-
-# ================= BALANCE =================
-@bot.message_handler(commands=['balance'])
-@safe
-def balance(m):
-    user = get_user(m.from_user.id)
-    user.setdefault("money", 1000)
-    set_user(m.from_user.id, user)
-    bot.send_message(m.chat.id, f"💰 Баланс: {user['money']}")
-
-# ================= XP =================
-@bot.message_handler(commands=['xp'])
-@safe
-def xp(m):
-    user = get_user(m.from_user.id)
-    bot.send_message(m.chat.id, f"⭐ XP: {user.get('xp',0)} | LVL: {user.get('lvl',1)}")
-
-# ================= PROFILE =================
-@bot.message_handler(commands=['profile'])
-@safe
-def profile(m):
-    user = get_user(m.from_user.id)
-    bot.send_message(m.chat.id, panel("ПРОФИЛЬ",
-        f"""
-💰 Деньги: {user.get('money',1000)}
-⭐ XP: {user.get('xp',0)}
-📊 LVL: {user.get('lvl',1)}
-💍 Брак: {'Да' if user.get('married') else 'Нет'}
-🎒 Инвентарь: {len(user.get('inventory',[]))}
-"""))
-
-# ================= FAMILY =================
-@bot.message_handler(commands=['marry'])
-@safe
-def marry(m):
-    user = get_user(m.from_user.id)
-    user["married"] = True
-    set_user(m.from_user.id, user)
-    bot.send_message(m.chat.id, "💍 Вы поженились!")
-
-@bot.message_handler(commands=['divorce'])
-@safe
-def divorce(m):
-    user = get_user(m.from_user.id)
-    user["married"] = False
-    set_user(m.from_user.id, user)
-    bot.send_message(m.chat.id, "💔 Развод оформлен")
-
-# ================= DAILY =================
-@bot.message_handler(commands=['daily'])
-@safe
-def daily(m):
-    user = get_user(m.from_user.id)
-    user.setdefault("money", 1000)
-    user["money"] += 200
-    set_user(m.from_user.id, user)
-    bot.send_message(m.chat.id, "🎁 +200 монет!")
-
-# ================= INVENTORY =================
-@bot.message_handler(commands=['inventory'])
-@safe
-def inv(m):
-    user = get_user(m.from_user.id)
-    inv = user.get("inventory", [])
-    bot.send_message(m.chat.id, "🎒 Инвентарь:\n" + ("\n".join(inv) if inv else "пусто"))
-
-# ================= RP CHAT =================
-def extract_user(text):
-    match = re.search(r'@(\w+)', text or "")
-    return match.group(1) if match else None
-
-
-@bot.message_handler(func=lambda m: True)
-@safe
-def rp_chat(m):
-    if not m.text:
+    if now - u["last_farm"] < 15:
+        wait = int(15 - (now - u["last_farm"]))
+        bot.send_message(message.chat.id, f"⏳ Подожди {wait} сек")
         return
 
-    text = m.text.lower()
-    user = m.from_user.first_name
-    target = extract_user(m.text)
+    reward = random.randint(50, 5000)
 
-    if "обнять" in text:
-        bot.reply_to(m, f"🤗 {user} обнял(а) @{target or 'кого-то'} 💞")
+    u["balance"] += reward
+    u["last_farm"] = now
 
-    elif "ударить" in text:
-        bot.reply_to(m, f"👊 {user} ударил(а) @{target or 'кого-то'} 💥")
+    save()
 
-    elif "поцеловать" in text:
-        bot.reply_to(m, f"💋 {user} поцеловал(а) @{target or 'кого-то'} ❤️")
+    bot.send_message(
+        message.chat.id,
+        f"⚡ Ты нафармил {format_money(reward)} XTRA"
+    )
 
-    elif "украсть" in text:
-        bot.reply_to(m, f"🕶 {user} попытался украсть у @{target or 'кого-то'} 😈")
+# ===================== DAILY =====================
+@bot.message_handler(commands=['daily'])
+def daily(message):
+    u = get_user(message.from_user.id)
+    now = int(time.time())
 
-    elif "пнуть" in text:
-        bot.reply_to(m, f"🦵 {user} пнул(а) @{target or 'кого-то'} 😂")
+    if now - u["last_daily"] < 86400:
+        bot.send_message(message.chat.id, "⏳ Уже забрал daily")
+        return
 
-# ================= WEBHOOK =================
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
+    u["balance"] += 1000
+    u["last_daily"] = now
+    save()
+
+    bot.send_message(message.chat.id, "🎁 +1000 XTRA")
+
+# ===================== ROULETTE (UPDATED BET) =====================
+@bot.message_handler(commands=['roulette'])
+def roulette(message):
+    u = get_user(message.from_user.id)
+
     try:
-        update = telebot.types.Update.de_json(request.get_data().decode())
-        bot.process_new_updates([update])
-    except Exception as e:
-        logging.error(e)
-    return "OK"
+        parts = message.text.split()
+        bet = int(parts[1]) if len(parts) > 1 else 100
+    except:
+        bet = 100
 
-def start_webhook():
-    bot.remove_webhook()
-    time.sleep(1)
+    if bet <= 0:
+        bot.send_message(message.chat.id, "❌ ставка должна быть больше 0")
+        return
 
-    if BASE_URL:
-        bot.set_webhook(url=f"{BASE_URL}/{TOKEN}")
-        logging.info("Webhook OK")
+    if u["balance"] < bet:
+        bot.send_message(message.chat.id, "❌ нет баланса")
+        return
+
+    u["balance"] -= bet
+    u["games"] += 1
+
+    msg = bot.send_message(message.chat.id, "🎰 Крутим рулетку...")
+
+    for i in range(4):
+        bot.edit_message_text("🎰 вращение " + "⚡"*i, message.chat.id, msg.message_id)
+        time.sleep(0.5)
+
+    win = random.random() < 0.35  # 35% шанс
+    multiplier = random.randint(2, 1000000)
+
+    if win:
+        win_amount = bet * multiplier
+        u["balance"] += win_amount
+        u["wins"] += 1
+
+        text = f"""
+🎉 ВЫИГРЫШ!
+
+💰 Ставка: {format_money(bet)}
+🔥 x{multiplier}
+💎 +{format_money(win_amount)} XTRA
+"""
     else:
-        logging.warning("NO BASE URL")
+        text = f"💀 ПРОИГРЫШ\n💸 -{format_money(bet)} XTRA"
 
-# ================= RUN =================
-if __name__ == "__main__":
-    start_webhook()
-    app.run(host="0.0.0.0", port=PORT)
+    save()
+    bot.edit_message_text(text, message.chat.id, msg.message_id)
+
+# ===================== PROFILE =====================
+@bot.message_handler(commands=['profile'])
+def profile(message):
+    u = get_user(message.from_user.id)
+
+    bot.send_message(message.chat.id, f"""
+👤 PROFILE XTRA ELITA
+
+💰 Баланс: {format_money(u['balance'])}
+🎮 Игры: {u['games']}
+🏆 Победы: {u['wins']}
+⚡ Фарм: 15 сек
+
+{'👑 VIP' if u['balance'] > 50000 else '👤 PLAYER'}
+""")
+
+# ===================== TOP =====================
+@bot.message_handler(commands=['top'])
+def top(message):
+    sorted_users = sorted(data.items(), key=lambda x: x[1]["balance"], reverse=True)[:10]
+
+    text = "🏆 TOP XTRA ELITA\n\n"
+
+    for i, (uid, u) in enumerate(sorted_users):
+        text += f"{i+1}. {uid} — {format_money(u['balance'])}\n"
+
+    bot.send_message(message.chat.id, text)
+
+# ===================== RUN =====================
+print("XTRA ELITA RUNNING...")
+bot.infinity_polling(skip_pending=True)
