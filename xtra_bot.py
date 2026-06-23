@@ -5,6 +5,7 @@ import random
 import telebot
 from flask import Flask, request
 
+# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 RENDER_URL = os.getenv("RENDER_URL")
 
@@ -12,11 +13,12 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 DATA_FILE = "data.json"
+ADMIN = "xtra_beluga"
 
-# ================= DATA =================
+# ================= LOAD =================
 def load():
     if not os.path.exists(DATA_FILE):
-        return {"users": {}, "last_daily": {}, "last_work": {}}
+        return {"users": {}, "last": {}}
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
@@ -26,36 +28,58 @@ def save():
 
 data = load()
 
+# ================= UTILS =================
+def uid(user):
+    return str(user.id)
+
+def is_admin(user):
+    return user.username == ADMIN
+
+def level(xp):
+    return xp // 120 + 1
+
+def cooldown(user_id, key, sec):
+    now = time.time()
+    last = data["last"].get(f"{user_id}_{key}", 0)
+    if now - last < sec:
+        return False
+    data["last"][f"{user_id}_{key}"] = now
+    return True
+
 # ================= USER =================
 def get_user(user):
-    uid = str(user.id)
+    u = uid(user)
 
-    if uid not in data["users"]:
-        data["users"][uid] = {
+    if u not in data["users"]:
+        data["users"][u] = {
             "name": user.username or user.first_name,
             "balance": 0,
             "xp": 0,
-            "inventory": {"bronze": 0, "elite": 0, "xtra": 0}
+            "items": {"bronze": 0, "elite": 0, "xtra": 0}
         }
 
-    return data["users"][uid]
-
-def level(xp):
-    return xp // 100 + 1
+    return data["users"][u]
 
 # ================= ECONOMY =================
 def work():
-    return random.randint(10, 200)
+    return random.randint(30, 250)
 
 def casino(bal):
     if bal < 50:
         return None
+    return random.randint(80, 300) if random.random() < 0.45 else -50
 
-    win = random.random() < 0.45
-    if win:
-        return random.randint(50, 300)
-    else:
-        return -50
+def daily():
+    return random.randint(200, 500)
+
+def case_reward(case):
+    if case == "bronze":
+        return random.randint(10, 120)
+    if case == "elite":
+        return random.randint(80, 350)
+    if case == "xtra":
+        return random.randint(250, 900)
+    return 0
 
 # ================= START =================
 @bot.message_handler(commands=["start"])
@@ -63,77 +87,83 @@ def start(m):
     u = get_user(m.from_user)
 
     bot.send_message(m.chat.id,
-        f"💎 XTRA ECONOMY BOT\n\n"
+        f"💎 XTRA ELITA ULTRA BOT\n\n"
         f"👤 {u['name']}\n"
         f"💰 Баланс: {u['balance']}\n"
         f"⭐ XP: {u['xp']}\n"
-        f"🏆 Level: {level(u['xp'])}"
+        f"🏆 Level: {level(u['xp'])}\n\n"
+        f"📜 /help"
+    )
+
+# ================= HELP =================
+@bot.message_handler(commands=["help"])
+def help_cmd(m):
+    bot.send_message(m.chat.id,
+        "📜 XTRA ELITA КОМАНДЫ\n\n"
+        "💰 /balance /work /daily /casino\n"
+        "💸 /transfer id сумма\n"
+        "🏆 /top /profile\n"
+        "🎁 /open bronze|elite|xtra\n"
+        "🎒 /inventory\n"
+        "🧑‍⚖️ /admin"
     )
 
 # ================= BALANCE =================
 @bot.message_handler(commands=["balance"])
 def balance(m):
     u = get_user(m.from_user)
-    bot.send_message(m.chat.id, f"💰 Баланс: {u['balance']}")
+    bot.send_message(m.chat.id, f"💰 {u['balance']}")
 
 # ================= WORK =================
 @bot.message_handler(commands=["work"])
-def cmd_work(m):
+def work_cmd(m):
     u = get_user(m.from_user)
-    gain = work()
 
+    if not cooldown(uid(m.from_user), "work", 30):
+        bot.send_message(m.chat.id, "⏳ подожди 30 секунд")
+        return
+
+    gain = work()
     u["balance"] += gain
     u["xp"] += 5
 
     save()
-    bot.send_message(m.chat.id, f"💼 Ты заработал +{gain} 💰")
+    bot.send_message(m.chat.id, f"💼 +{gain}")
 
 # ================= CASINO =================
 @bot.message_handler(commands=["casino"])
-def cmd_casino(m):
+def casino_cmd(m):
     u = get_user(m.from_user)
+
+    if not cooldown(uid(m.from_user), "casino", 20):
+        bot.send_message(m.chat.id, "⏳ подожди")
+        return
 
     res = casino(u["balance"])
     if res is None:
-        bot.send_message(m.chat.id, "❌ Нужно минимум 50💰")
+        bot.send_message(m.chat.id, "❌ мало денег")
         return
 
     u["balance"] += res
+    u["xp"] += 3
 
     save()
-    bot.send_message(m.chat.id, f"🎰 Результат: {res}")
+    bot.send_message(m.chat.id, f"🎰 {res}")
 
 # ================= DAILY =================
 @bot.message_handler(commands=["daily"])
-def daily(m):
+def daily_cmd(m):
     u = get_user(m.from_user)
 
-    uid = str(m.from_user.id)
-    last = data["last_daily"].get(uid, 0)
-
-    if time.time() - last < 86400:
-        bot.send_message(m.chat.id, "⏳ Уже забрал daily")
+    if not cooldown(uid(m.from_user), "daily", 86400):
+        bot.send_message(m.chat.id, "⏳ уже забрал daily")
         return
 
-    u["balance"] += 250
+    u["balance"] += daily()
     u["xp"] += 20
-    data["last_daily"][uid] = time.time()
 
     save()
-    bot.send_message(m.chat.id, "🎁 Daily +250💰")
-
-# ================= INVENTORY =================
-@bot.message_handler(commands=["inventory"])
-def inv(m):
-    u = get_user(m.from_user)
-    i = u["inventory"]
-
-    bot.send_message(m.chat.id,
-        f"🎒 Инвентарь:\n"
-        f"🥉 Bronze: {i['bronze']}\n"
-        f"💎 Elite: {i['elite']}\n"
-        f"⚡ XTRA: {i['xtra']}"
-    )
+    bot.send_message(m.chat.id, "🎁 daily получен")
 
 # ================= PROFILE =================
 @bot.message_handler(commands=["profile"])
@@ -148,13 +178,49 @@ def profile(m):
         f"🏆 Level: {level(u['xp'])}"
     )
 
+# ================= INVENTORY =================
+@bot.message_handler(commands=["inventory"])
+def inv(m):
+    u = get_user(m.from_user)
+
+    bot.send_message(m.chat.id,
+        f"🎒 ИНВЕНТАРЬ\n"
+        f"🥉 Bronze: {u['items']['bronze']}\n"
+        f"💎 Elite: {u['items']['elite']}\n"
+        f"⚡ XTRA: {u['items']['xtra']}"
+    )
+
+# ================= CASES =================
+@bot.message_handler(commands=["open"])
+def open_case(m):
+    args = m.text.split()
+
+    if len(args) != 2:
+        bot.send_message(m.chat.id, "open bronze|elite|xtra")
+        return
+
+    u = get_user(m.from_user)
+    case = args[1]
+
+    reward = case_reward(case)
+
+    if case in u["items"]:
+        u["items"][case] += 1
+
+    u["balance"] += reward
+    u["xp"] += 10
+
+    save()
+    bot.send_message(m.chat.id, f"🎁 {case}: +{reward}")
+
 # ================= TOP =================
 @bot.message_handler(commands=["top"])
 def top(m):
     users = list(data["users"].values())
     users.sort(key=lambda x: x["balance"], reverse=True)
 
-    text = "🏆 ТОП ИГРОКОВ\n\n"
+    text = "🏆 XTRA ELITA TOP\n\n"
+
     for i, u in enumerate(users[:10], 1):
         text += f"{i}. {u['name']} — {u['balance']}💰\n"
 
@@ -166,10 +232,10 @@ def transfer(m):
     args = m.text.split()
 
     if len(args) != 3:
-        bot.send_message(m.chat.id, "Используй: /transfer id сумма")
+        bot.send_message(m.chat.id, "/transfer id сумма")
         return
 
-    to_id = args[1]
+    to = args[1]
     amount = int(args[2])
 
     u = get_user(m.from_user)
@@ -178,46 +244,48 @@ def transfer(m):
         bot.send_message(m.chat.id, "❌ нет денег")
         return
 
-    if to_id not in data["users"]:
+    if to not in data["users"]:
         bot.send_message(m.chat.id, "❌ игрок не найден")
         return
 
     u["balance"] -= amount
-    data["users"][to_id]["balance"] += amount
+    data["users"][to]["balance"] += amount
 
     save()
-    bot.send_message(m.chat.id, f"💸 переведено {amount}")
+    bot.send_message(m.chat.id, "💸 переведено")
 
-# ================= CASES =================
-@bot.message_handler(commands=["open"])
-def open_case(m):
-    args = m.text.split()
-
-    if len(args) != 2:
-        bot.send_message(m.chat.id, "open bronze / elite / xtra")
+# ================= ADMIN =================
+@bot.message_handler(commands=["admin"])
+def admin(m):
+    if not is_admin(m.from_user):
         return
 
-    case = args[1]
-    u = get_user(m.from_user)
+    bot.send_message(m.chat.id,
+        "🧑‍⚖️ XTRA ELITA ADMIN\n"
+        "/giveall /chaos"
+    )
 
-    if case == "bronze":
-        reward = random.randint(10, 100)
-        u["inventory"]["bronze"] += 1
+@bot.message_handler(commands=["giveall"])
+def giveall(m):
+    if not is_admin(m.from_user):
+        return
 
-    elif case == "elite":
-        reward = random.randint(50, 300)
-        u["inventory"]["elite"] += 1
+    for u in data["users"].values():
+        u["balance"] += 1000
 
-    elif case == "xtra":
-        reward = random.randint(200, 800)
-        u["inventory"]["xtra"] += 1
-    else:
-        reward = 0
-
-    u["balance"] += reward
     save()
+    bot.send_message(m.chat.id, "🔥 всем +1000")
 
-    bot.send_message(m.chat.id, f"🎁 {case}: +{reward}")
+@bot.message_handler(commands=["chaos"])
+def chaos(m):
+    if not is_admin(m.from_user):
+        return
+
+    for u in data["users"].values():
+        u["balance"] = random.randint(0, 10000)
+
+    save()
+    bot.send_message(m.chat.id, "🔥 CHAOS MODE")
 
 # ================= WEBHOOK =================
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -228,7 +296,7 @@ def webhook():
 
 @app.route("/")
 def home():
-    return "XTRA ECONOMY BOT RUNNING"
+    return "XTRA ELITA ULTRA BOT RUNNING"
 
 # ================= RUN =================
 if __name__ == "__main__":
