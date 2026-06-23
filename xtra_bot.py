@@ -288,38 +288,58 @@ def pay(message):
     create_user(message.from_user)
 
     args = message.text.split()
-
-    if len(args) != 3:
-        bot.reply_to(
-            message,
-            "Использование:\n/pay ID СУММА"
-        )
-        return
-
     sender = str(message.from_user.id)
 
-    target = find_user_id(args[1])  # 🔥 ВОТ ГЛАВНОЕ ИЗМЕНЕНИЕ
+    # =========================
+    # CASE 1: reply
+    # /pay 100
+    # =========================
+    if message.reply_to_message:
+        if len(args) != 2:
+            bot.reply_to(message, "Использование: /pay СУММА")
+            return
 
-    if not target:
-        bot.reply_to(message, "Игрок не найден")
-        return
+        target = str(message.reply_to_message.from_user.id)
 
-    try:
-        amount = int(args[2])
-    except:
+        try:
+            amount = int(args[1])
+        except:
+            return
+
+    # =========================
+    # CASE 2: username or id
+    # /pay @user 100
+    # /pay 123 100
+    # =========================
+    else:
+        if len(args) != 3:
+            bot.reply_to(message, "Использование: /pay @user СУММА или /pay ID СУММА")
+            return
+
+        target = find_user_id(args[1])
+
+        try:
+            amount = int(args[2])
+        except:
+            return
+
+    # =========================
+    # CHECKS
+    # =========================
+    if not target or target not in data:
+        bot.reply_to(message, "❌ Игрок не найден")
         return
 
     if amount <= 0:
         return
 
-    if target not in data:
-        bot.reply_to(message, "Игрок не найден")
-        return
-
     if data[sender]["balance"] < amount:
-        bot.reply_to(message, "Недостаточно средств")
+        bot.reply_to(message, "❌ Недостаточно средств")
         return
 
+    # =========================
+    # TRANSFER
+    # =========================
     data[sender]["balance"] -= amount
     data[target]["balance"] += amount
 
@@ -328,8 +348,9 @@ def pay(message):
     bot.reply_to(
         message,
         panel(
-            "ПЕРЕВОД",
-            f"Отправлено {amount} XTRA"
+            "ПЕРЕВОД 💸",
+            f"Отправлено: {amount} XTRA\n"
+            f"Получатель: {target}"
         )
     )
 
