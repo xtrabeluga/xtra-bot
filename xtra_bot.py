@@ -33,8 +33,12 @@ def find_user_id(identifier):
     identifier = str(identifier).replace("@", "").lower()
 
     for uid, user in data.items():
-        if user.get("username", "").lower() == identifier:
+
+        username = user.get("username")
+
+        if username and username.lower() == identifier:
             return uid
+
         if uid == identifier:
             return uid
 
