@@ -24,7 +24,7 @@ def load_data():
         with open(DATA_FILE, "r") as f:
             return json.load(f)
     except:
-        return {"users": {}, "last_xp": {}}
+        return {"users": {}, "last_xp": {}, "daily": {}}
 
 def save_data(data):
     try:
@@ -42,80 +42,63 @@ def get_user(user):
         data["users"][uid] = {
             "balance": 0,
             "xp": 0,
-            "crystals": 0,
-            "messages": 0,
             "level": 1,
-            "cases": 0
+            "crystals": 0,
+            "inventory": {"bronze": 0, "elite": 0, "xtra": 0}
         }
     return data["users"][uid]
 
 def level_from_xp(xp):
-    level = 1
-    while xp >= level * level * 100:
-        level += 1
-    return level
-
-def username(user):
-    return user.username or user.first_name
+    lvl = 1
+    while xp >= lvl * lvl * 100:
+        lvl += 1
+    return lvl
 
 def is_admin(user):
     return user.username == ADMIN_USERNAME
 
-# ================= KEYBOARDS =================
+def name(user):
+    return user.username or user.first_name
+
+# ================= KEYBOARD =================
 def main_kb(user):
     kb = telebot.types.InlineKeyboardMarkup()
 
     kb.row(
-        telebot.types.InlineKeyboardButton("💼 Работа", callback_data="work"),
-        telebot.types.InlineKeyboardButton("🎰 Казино", callback_data="casino")
+        telebot.types.InlineKeyboardButton("💼 Work", callback_data="work"),
+        telebot.types.InlineKeyboardButton("🎰 Casino", callback_data="casino")
     )
 
     kb.row(
-        telebot.types.InlineKeyboardButton("🎁 Кейсы", callback_data="cases"),
-        telebot.types.InlineKeyboardButton("🛒 Магазин", callback_data="shop")
+        telebot.types.InlineKeyboardButton("🎁 Cases", callback_data="cases"),
+        telebot.types.InlineKeyboardButton("🎒 Inventory", callback_data="inventory")
     )
 
     kb.row(
-        telebot.types.InlineKeyboardButton("👤 Профиль", callback_data="profile"),
-        telebot.types.InlineKeyboardButton("🏆 Топ", callback_data="top")
+        telebot.types.InlineKeyboardButton("👤 Profile", callback_data="profile"),
+        telebot.types.InlineKeyboardButton("🏆 Top", callback_data="top")
     )
 
     if is_admin(user):
-        kb.row(
-            telebot.types.InlineKeyboardButton("⚙️ Админ", callback_data="admin")
-        )
+        kb.row(telebot.types.InlineKeyboardButton("⚙ Admin", callback_data="admin"))
 
-    return kb
-
-def admin_kb():
-    kb = telebot.types.InlineKeyboardMarkup()
-    kb.row(
-        telebot.types.InlineKeyboardButton("+1000💰", callback_data="adm_money"),
-        telebot.types.InlineKeyboardButton("+500⭐", callback_data="adm_xp")
-    )
-    kb.row(
-        telebot.types.InlineKeyboardButton("🌀 Chaos", callback_data="adm_chaos"),
-        telebot.types.InlineKeyboardButton("🤡 Troll", callback_data="adm_troll")
-    )
     return kb
 
 # ================= XP =================
-def give_xp(user, amount):
+def give_xp(user):
     uid = str(user.id)
     now = time.time()
 
-    last = data["last_xp"].get(uid, 0)
-    if now - last < 30:
+    if now - data["last_xp"].get(uid, 0) < 30:
         return
 
     if random.random() > 0.3:
         return
 
-    data["last_xp"][uid] = now
-
     u = get_user(user)
-    u["xp"] += amount
+    u["xp"] += random.randint(1, 3)
     u["level"] = level_from_xp(u["xp"])
+    data["last_xp"][uid] = now
 
 # ================= START =================
 @bot.message_handler(commands=["start"])
@@ -125,47 +108,73 @@ def start(message):
 
     bot.send_message(
         message.chat.id,
-        f"⚡ XTRA ELITA PRO\n\n👤 {username(message.from_user)}\n💰 Баланс: {u['balance']}\n⭐ XP: {u['xp']}\n🏆 Level: {u['level']}",
+        f"⚡ XTRA ELITA PRO\n\n👤 {name(message.from_user)}\n💰 {u['balance']}\n⭐ {u['xp']}\n🏆 Lv {u['level']}",
         reply_markup=main_kb(message.from_user)
     )
 
-# ================= XP MESSAGE =================
-@bot.message_handler(func=lambda m: True)
-def handle_message(message):
-    u = get_user(message.from_user)
-    u["messages"] += 1
+# ================= COMMANDS =================
+@bot.message_handler(commands=["balance"])
+def balance(m):
+    u = get_user(m.from_user)
+    bot.send_message(m.chat.id, f"💰 {u['balance']}")
 
-    if len(message.text or "") > 20:
-        give_xp(message.from_user, random.randint(1, 3))
+@bot.message_handler(commands=["xp"])
+def xp(m):
+    u = get_user(m.from_user)
+    bot.send_message(m.chat.id, f"⭐ {u['xp']}")
 
-    save_data(data)
+@bot.message_handler(commands=["level"])
+def level(m):
+    u = get_user(m.from_user)
+    bot.send_message(m.chat.id, f"🏆 {u['level']}")
+
+@bot.message_handler(commands=["inventory"])
+def inventory(m):
+    u = get_user(m.from_user)
+    inv = u["inventory"]
+
+    bot.send_message(m.chat.id,
+        f"🎒 INVENTORY\n"
+        f"🥉 Bronze: {inv['bronze']}\n"
+        f"💎 Elite: {inv['elite']}\n"
+        f"⚡ XTRA: {inv['xtra']}"
+    )
+
+@bot.message_handler(commands=["help"])
+def help_cmd(m):
+    bot.send_message(m.chat.id,
+        "/balance\n/xp\n/level\n/inventory\n/daily\n/work\n/casino"
+    )
+
+@bot.message_handler(commands=["daily"])
+def daily(m):
+    uid = str(m.from_user.id)
+    now = time.time()
+
+    if now - data["daily"].get(uid, 0) < 86400:
+        bot.send_message(m.chat.id, "⏳ already claimed")
+        return
+
+    u = get_user(m.from_user)
+    reward = random.randint(50, 200)
+    u["balance"] += reward
+
+    data["daily"][uid] = now
+    bot.send_message(m.chat.id, f"🎁 +{reward}")
 
 # ================= CALLBACKS =================
 @bot.callback_query_handler(func=lambda call: True)
-def callback(call):
-    user = call.from_user
-    u = get_user(user)
+def cb(call):
+    u = get_user(call.from_user)
 
-    # WORK
     if call.data == "work":
-        r = random.random()
-
-        if r < 0.5:
-            gain = random.randint(10, 20)
-        elif r < 0.8:
-            gain = random.randint(20, 40)
-        elif r < 0.95:
-            gain = random.randint(40, 60)
-        else:
-            gain = random.randint(100, 150)
-
+        gain = random.randint(10, 150)
         u["balance"] += gain
-        bot.answer_callback_query(call.id, f"+{gain}💰")
+        bot.answer_callback_query(call.id, f"+{gain}")
 
-    # CASINO
     elif call.data == "casino":
         if u["balance"] < 50:
-            bot.answer_callback_query(call.id, "Нет денег")
+            bot.answer_callback_query(call.id, "No money")
             return
 
         u["balance"] -= 50
@@ -173,75 +182,54 @@ def callback(call):
         if random.random() < 0.4:
             win = 150
             u["balance"] += win
-            give_xp(user, 2)
             bot.answer_callback_query(call.id, f"WIN +{win}")
         else:
             bot.answer_callback_query(call.id, "LOSE")
 
-    # PROFILE
-    elif call.data == "profile":
-        bot.edit_message_text(
-            f"👤 PROFILE\n\n"
-            f"User: {username(user)}\n"
-            f"💰 {u['balance']}\n"
-            f"⭐ {u['xp']}\n"
-            f"🏆 Level {u['level']}\n"
-            f"💎 Crystals {u['crystals']}",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=main_kb(user)
+    elif call.data == "cases":
+        bot.send_message(call.message.chat.id,
+            "🎁 CASES\n🥉 /open_bronze\n💎 /open_elite\n⚡ /open_xtra"
         )
 
-    # TOP
+    elif call.data == "inventory":
+        inv = u["inventory"]
+        bot.send_message(call.message.chat.id,
+            f"🎒 INVENTORY\n🥉 {inv['bronze']}\n💎 {inv['elite']}\n⚡ {inv['xtra']}"
+        )
+
+    elif call.data == "profile":
+        bot.send_message(call.message.chat.id,
+            f"👤 {name(call.from_user)}\n💰 {u['balance']}\n⭐ {u['xp']}\n🏆 {u['level']}"
+        )
+
     elif call.data == "top":
         top = sorted(data["users"].items(), key=lambda x: x[1]["balance"], reverse=True)[:5]
-        text = "🏆 TOP PLAYERS\n\n"
+        txt = "🏆 TOP\n"
+        for i,(uid,d) in enumerate(top):
+            txt += f"{i+1}. {d['balance']}\n"
+        bot.send_message(call.message.chat.id, txt)
 
-        for i, (uid, d) in enumerate(top):
-            text += f"{i+1}. 💰 {d['balance']}\n"
-
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=main_kb(user))
-
-    # ADMIN
-    elif call.data == "admin" and is_admin(user):
-        bot.edit_message_text("⚙️ ADMIN PANEL", call.message.chat.id, call.message.message_id, reply_markup=admin_kb())
-
-    elif call.data == "adm_money" and is_admin(user):
-        u["balance"] += 1000
-        bot.answer_callback_query(call.id, "+1000")
-
-    elif call.data == "adm_xp" and is_admin(user):
-        u["xp"] += 500
-        u["level"] = level_from_xp(u["xp"])
-        bot.answer_callback_query(call.id, "+500 XP")
-
-    elif call.data == "adm_chaos" and is_admin(user):
-        for uid in data["users"]:
-            data["users"][uid]["balance"] = random.randint(0, 10000)
-        bot.answer_callback_query(call.id, "CHAOS DONE")
-
-    elif call.data == "adm_troll" and is_admin(user):
-        bot.send_message(call.message.chat.id, "🤡 Troll Mode activated")
+    elif call.data == "admin" and is_admin(call.from_user):
+        bot.send_message(call.message.chat.id, "⚙ ADMIN OK")
 
     save_data(data)
 
 # ================= WEBHOOK =================
 @app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    json_str = request.get_data().decode("utf-8")
-    update = telebot.types.Update.de_json(json_str)
+def hook():
+    update = telebot.types.Update.de_json(request.get_data().decode("utf-8"))
     bot.process_new_updates([update])
-    return "OK", 200
+    return "OK"
 
 @app.route("/")
-def index():
-    return "XTRA ELITA BOT RUNNING"
+def home():
+    return "BOT OK"
 
-# ================= START =================
+# ================= RUN =================
 if __name__ == "__main__":
     if WEBHOOK_URL:
         bot.remove_webhook()
         time.sleep(1)
-        bot.set_webhook(url=WEBHOOK_URL)
+        bot.set_webhook(WEBHOOK_URL)
 
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
