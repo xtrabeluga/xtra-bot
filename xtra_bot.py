@@ -1083,4 +1083,8 @@ save_data(data)
 
 print("XTRA ELITA PRO ONLINE")
 
+# 🔥 FIX 409 CONFLICT
+bot.remove_webhook()
+time.sleep(1)
+
 bot.infinity_polling(skip_pending=True)
