@@ -5,7 +5,6 @@ import random
 import telebot
 from flask import Flask, request
 
-# ================= CONFIG =================
 TOKEN = os.getenv("TOKEN")
 RENDER_URL = os.getenv("RENDER_URL")
 
@@ -13,14 +12,16 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 DATA_FILE = "data.json"
-ADMIN = "xtra_beluga"
 
 # ================= LOAD =================
 def load():
     if not os.path.exists(DATA_FILE):
-        return {"users": {}, "last": {}}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        return {"users": {}}
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"users": {}}
 
 def save():
     with open(DATA_FILE, "w") as f:
@@ -28,264 +29,234 @@ def save():
 
 data = load()
 
-# ================= UTILS =================
-def uid(user):
-    return str(user.id)
-
-def is_admin(user):
-    return user.username == ADMIN
-
-def level(xp):
-    return xp // 120 + 1
-
-def cooldown(user_id, key, sec):
-    now = time.time()
-    last = data["last"].get(f"{user_id}_{key}", 0)
-    if now - last < sec:
-        return False
-    data["last"][f"{user_id}_{key}"] = now
-    return True
-
 # ================= USER =================
 def get_user(user):
-    u = uid(user)
+    uid = str(user.id)
 
-    if u not in data["users"]:
-        data["users"][u] = {
+    if uid not in data["users"]:
+        data["users"][uid] = {
             "name": user.username or user.first_name,
-            "balance": 0,
-            "xp": 0,
-            "items": {"bronze": 0, "elite": 0, "xtra": 0}
+            "hugs": 0,
+            "kisses": 0,
+            "slaps": 0,
+            "roasts": 0,
+            "loves": 0,
+            "messages": 0,
+
+            # 💍 MARriage
+            "marriage": {
+                "partner": "",
+                "pending": ""
+            },
+
+            # 👪 FAMILY SYSTEM
+            "family": {
+                "spouse": "",
+                "children": [],
+                "family_id": "",
+                "balance": 0
+            }
         }
 
-    return data["users"][u]
+    return data["users"][uid]
 
-# ================= ECONOMY =================
-def work():
-    return random.randint(30, 250)
+def sender(m):
+    return m.from_user.username or m.from_user.first_name
 
-def casino(bal):
-    if bal < 50:
-        return None
-    return random.randint(80, 300) if random.random() < 0.45 else -50
+# ================= ANIMATION =================
+def animate(chat_id, text_final):
+    msg = bot.send_message(chat_id, "⏳ ...")
+    time.sleep(0.3)
+    bot.edit_message_text("⏳ ..", chat_id, msg.message_id)
+    time.sleep(0.3)
+    bot.edit_message_text("⏳ .", chat_id, msg.message_id)
+    time.sleep(0.3)
+    bot.edit_message_text(text_final, chat_id, msg.message_id)
 
-def daily():
-    return random.randint(200, 500)
+# ================= RP =================
+def action(m, key, templates):
+    u = get_user(m.from_user)
+    u[key] += 1
+    u["messages"] += 1
 
-def case_reward(case):
-    if case == "bronze":
-        return random.randint(10, 120)
-    if case == "elite":
-        return random.randint(80, 350)
-    if case == "xtra":
-        return random.randint(250, 900)
-    return 0
+    target = m.text.split()[1] if len(m.text.split()) > 1 else "кого-то"
+    text = random.choice(templates).format(a=sender(m), b=target)
 
-# ================= START =================
+    save()
+    animate(m.chat.id, text)
+
+# ================= TEMPLATES =================
+hugs = ["🤗 {a} обнял {b}", "🤍 {a} прижал {b}"]
+kisses = ["💋 {a} поцеловал {b}", "💖 {a} нежно коснулся {b}"]
+slaps = ["👋 {a} ударил {b}", "💥 {a} дал пощёчину {b}"]
+roasts = ["🔥 {a} уничтожил {b}", "🤡 {a} подколол {b}"]
+
+# ================= COMMANDS =================
 @bot.message_handler(commands=["start"])
 def start(m):
     u = get_user(m.from_user)
 
     bot.send_message(m.chat.id,
-        f"💎 XTRA ELITA ULTRA BOT\n\n"
+        f"💎 XTRA ELITA RP BOT\n\n"
         f"👤 {u['name']}\n"
-        f"💰 Баланс: {u['balance']}\n"
-        f"⭐ XP: {u['xp']}\n"
-        f"🏆 Level: {level(u['xp'])}\n\n"
+        f"💬 сообщений: {u['messages']}\n\n"
         f"📜 /help"
     )
 
-# ================= HELP =================
 @bot.message_handler(commands=["help"])
 def help_cmd(m):
     bot.send_message(m.chat.id,
-        "📜 XTRA ELITA КОМАНДЫ\n\n"
-        "💰 /balance /work /daily /casino\n"
-        "💸 /transfer id сумма\n"
-        "🏆 /top /profile\n"
-        "🎁 /open bronze|elite|xtra\n"
-        "🎒 /inventory\n"
-        "🧑‍⚖️ /admin"
+        "📜 XTRA ELITA RP\n\n"
+        "/hug @user\n/kiss @user\n/slap @user\n/roast @user\n/love @user\n/profile\n/stats\n\n"
+        "💍 /marry @user\n💔 /divorce\n👶 /child name\n🏠 /family"
     )
 
-# ================= BALANCE =================
-@bot.message_handler(commands=["balance"])
-def balance(m):
+# ================= RP ACTIONS =================
+@bot.message_handler(commands=["hug"])
+def hug(m): action(m, "hugs", hugs)
+
+@bot.message_handler(commands=["kiss"])
+def kiss(m): action(m, "kisses", kisses)
+
+@bot.message_handler(commands=["slap"])
+def slap(m): action(m, "slaps", slaps)
+
+@bot.message_handler(commands=["roast"])
+def roast(m): action(m, "roasts", roasts)
+
+@bot.message_handler(commands=["love"])
+def love(m):
     u = get_user(m.from_user)
-    bot.send_message(m.chat.id, f"💰 {u['balance']}")
+    u["loves"] += 1
+    u["messages"] += 1
 
-# ================= WORK =================
-@bot.message_handler(commands=["work"])
-def work_cmd(m):
-    u = get_user(m.from_user)
+    target = m.text.split()[1] if len(m.text.split()) > 1 else "кого-то"
+    p = random.randint(0, 100)
 
-    if not cooldown(uid(m.from_user), "work", 30):
-        bot.send_message(m.chat.id, "⏳ подожди 30 секунд")
-        return
-
-    gain = work()
-    u["balance"] += gain
-    u["xp"] += 5
+    if p > 80:
+        text = "💘 ИДЕАЛЬНАЯ ПАРА"
+    elif p > 50:
+        text = "💖 есть шанс"
+    else:
+        text = "💔 не судьба"
 
     save()
-    bot.send_message(m.chat.id, f"💼 +{gain}")
+    animate(m.chat.id, f"{sender(m)} ❤️ {target}\n{text}\n{p}%")
 
-# ================= CASINO =================
-@bot.message_handler(commands=["casino"])
-def casino_cmd(m):
+# ================= 💍 MARRIAGE =================
+@bot.message_handler(commands=["marry"])
+def marry(m):
     u = get_user(m.from_user)
+    target = m.text.split(maxsplit=1)
 
-    if not cooldown(uid(m.from_user), "casino", 20):
-        bot.send_message(m.chat.id, "⏳ подожди")
-        return
+    if len(target) < 2:
+        return bot.send_message(m.chat.id, "Используй /marry @user")
 
-    res = casino(u["balance"])
-    if res is None:
-        bot.send_message(m.chat.id, "❌ мало денег")
-        return
-
-    u["balance"] += res
-    u["xp"] += 3
+    u["marriage"]["pending"] = target[1]
 
     save()
-    bot.send_message(m.chat.id, f"🎰 {res}")
+    bot.send_message(m.chat.id,
+        f"💍 {sender(m)} сделал предложение {target[1]}\n"
+        f"👉 /accept"
+    )
 
-# ================= DAILY =================
-@bot.message_handler(commands=["daily"])
-def daily_cmd(m):
+@bot.message_handler(commands=["accept"])
+def accept(m):
     u = get_user(m.from_user)
 
-    if not cooldown(uid(m.from_user), "daily", 86400):
-        bot.send_message(m.chat.id, "⏳ уже забрал daily")
-        return
+    if not u["marriage"]["pending"]:
+        return bot.send_message(m.chat.id, "❌ нет предложения")
 
-    u["balance"] += daily()
-    u["xp"] += 20
+    partner = u["marriage"]["pending"]
+    family_id = str(random.randint(10000, 99999))
+
+    u["marriage"]["partner"] = partner
+    u["marriage"]["pending"] = ""
+
+    u["family"]["spouse"] = partner
+    u["family"]["family_id"] = family_id
 
     save()
-    bot.send_message(m.chat.id, "🎁 daily получен")
+
+    bot.send_message(m.chat.id,
+        f"💍 БРАК ЗАКЛЮЧЁН!\n"
+        f"❤️ {sender(m)} + {partner}\n"
+        f"🏠 Family ID: {family_id}"
+    )
+
+@bot.message_handler(commands=["divorce"])
+def divorce(m):
+    u = get_user(m.from_user)
+
+    u["marriage"]["partner"] = ""
+    u["family"] = {
+        "spouse": "",
+        "children": [],
+        "family_id": "",
+        "balance": 0
+    }
+
+    save()
+    bot.send_message(m.chat.id, "💔 семья распалась")
+
+@bot.message_handler(commands=["child"])
+def child(m):
+    u = get_user(m.from_user)
+    name = m.text.split(maxsplit=1)
+
+    if len(name) < 2:
+        return bot.send_message(m.chat.id, "Используй /child имя")
+
+    u["family"]["children"].append(name[1])
+    save()
+
+    bot.send_message(m.chat.id, f"👶 родился ребёнок: {name[1]}")
+
+@bot.message_handler(commands=["family"])
+def family(m):
+    u = get_user(m.from_user)
+
+    bot.send_message(m.chat.id,
+        f"🏠 FAMILY XTRA ELITA\n\n"
+        f"💍 Партнёр: {u['family']['spouse']}\n"
+        f"👶 Дети: {', '.join(u['family']['children']) or 'нет'}\n"
+        f"🏠 ID: {u['family']['family_id']}\n"
+        f"💰 Баланс: {u['family']['balance']}"
+    )
 
 # ================= PROFILE =================
 @bot.message_handler(commands=["profile"])
 def profile(m):
     u = get_user(m.from_user)
 
-    bot.send_message(m.chat.id,
-        f"📜 ПРОФИЛЬ\n\n"
-        f"👤 {u['name']}\n"
-        f"💰 {u['balance']}\n"
-        f"⭐ XP: {u['xp']}\n"
-        f"🏆 Level: {level(u['xp'])}"
-    )
-
-# ================= INVENTORY =================
-@bot.message_handler(commands=["inventory"])
-def inv(m):
-    u = get_user(m.from_user)
+    total = u["hugs"] + u["kisses"] + u["slaps"] + u["roasts"] + u["loves"]
 
     bot.send_message(m.chat.id,
-        f"🎒 ИНВЕНТАРЬ\n"
-        f"🥉 Bronze: {u['items']['bronze']}\n"
-        f"💎 Elite: {u['items']['elite']}\n"
-        f"⚡ XTRA: {u['items']['xtra']}"
+        f"👤 XTRA ELITA ПРОФИЛЬ\n\n"
+        f"Имя: {u['name']}\n"
+        f"💬 сообщений: {u['messages']}\n"
+        f"📊 активность: {total}"
     )
 
-# ================= CASES =================
-@bot.message_handler(commands=["open"])
-def open_case(m):
-    args = m.text.split()
-
-    if len(args) != 2:
-        bot.send_message(m.chat.id, "open bronze|elite|xtra")
-        return
-
-    u = get_user(m.from_user)
-    case = args[1]
-
-    reward = case_reward(case)
-
-    if case in u["items"]:
-        u["items"][case] += 1
-
-    u["balance"] += reward
-    u["xp"] += 10
-
-    save()
-    bot.send_message(m.chat.id, f"🎁 {case}: +{reward}")
-
-# ================= TOP =================
-@bot.message_handler(commands=["top"])
-def top(m):
+# ================= STATS =================
+@bot.message_handler(commands=["stats"])
+def stats(m):
     users = list(data["users"].values())
-    users.sort(key=lambda x: x["balance"], reverse=True)
+    users.sort(key=lambda x: x["messages"], reverse=True)
 
-    text = "🏆 XTRA ELITA TOP\n\n"
+    text = "📊 TOP XTRA ELITA\n\n"
 
-    for i, u in enumerate(users[:10], 1):
-        text += f"{i}. {u['name']} — {u['balance']}💰\n"
+    for i, u in enumerate(users[:5], 1):
+        text += f"{i}. {u['name']} — {u['messages']}\n"
 
     bot.send_message(m.chat.id, text)
 
-# ================= TRANSFER =================
-@bot.message_handler(commands=["transfer"])
-def transfer(m):
-    args = m.text.split()
-
-    if len(args) != 3:
-        bot.send_message(m.chat.id, "/transfer id сумма")
-        return
-
-    to = args[1]
-    amount = int(args[2])
-
+# ================= TRACK =================
+@bot.message_handler(func=lambda m: True)
+def track(m):
     u = get_user(m.from_user)
-
-    if u["balance"] < amount:
-        bot.send_message(m.chat.id, "❌ нет денег")
-        return
-
-    if to not in data["users"]:
-        bot.send_message(m.chat.id, "❌ игрок не найден")
-        return
-
-    u["balance"] -= amount
-    data["users"][to]["balance"] += amount
-
+    u["messages"] += 1
     save()
-    bot.send_message(m.chat.id, "💸 переведено")
-
-# ================= ADMIN =================
-@bot.message_handler(commands=["admin"])
-def admin(m):
-    if not is_admin(m.from_user):
-        return
-
-    bot.send_message(m.chat.id,
-        "🧑‍⚖️ XTRA ELITA ADMIN\n"
-        "/giveall /chaos"
-    )
-
-@bot.message_handler(commands=["giveall"])
-def giveall(m):
-    if not is_admin(m.from_user):
-        return
-
-    for u in data["users"].values():
-        u["balance"] += 1000
-
-    save()
-    bot.send_message(m.chat.id, "🔥 всем +1000")
-
-@bot.message_handler(commands=["chaos"])
-def chaos(m):
-    if not is_admin(m.from_user):
-        return
-
-    for u in data["users"].values():
-        u["balance"] = random.randint(0, 10000)
-
-    save()
-    bot.send_message(m.chat.id, "🔥 CHAOS MODE")
 
 # ================= WEBHOOK =================
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -296,13 +267,11 @@ def webhook():
 
 @app.route("/")
 def home():
-    return "XTRA ELITA ULTRA BOT RUNNING"
+    return "XTRA ELITA BOT RUNNING"
 
 # ================= RUN =================
 if __name__ == "__main__":
     bot.remove_webhook()
-    time.sleep(1)
-
     bot.set_webhook(f"{RENDER_URL}/{TOKEN}")
 
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
