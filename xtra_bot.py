@@ -28,6 +28,17 @@ def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
+			
+def find_user_id(identifier):
+    identifier = str(identifier).replace("@", "").lower()
+
+    for uid, user in data.items():
+        if user.get("username", "").lower() == identifier:
+            return uid
+        if uid == identifier:
+            return uid
+
+    return None
 
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -52,6 +63,7 @@ def create_user(user):
         data[uid] = {
             "id": user.id,
             "name": user.first_name,
+            "username": user.username,  # 🔥 ДОБАВИЛИ
 			
             "balance": 1000,
 			
@@ -278,7 +290,12 @@ def pay(message):
         return
 
     sender = str(message.from_user.id)
-    target = args[1]
+
+    target = find_user_id(args[1])  # 🔥 ВОТ ГЛАВНОЕ ИЗМЕНЕНИЕ
+
+    if not target:
+        bot.reply_to(message, "Игрок не найден")
+        return
 
     try:
         amount = int(args[2])
@@ -810,14 +827,14 @@ def add_money(message):
         )
         return
 
-    target = args[1]
+    target = find_user_id(args[1])
 
     try:
         amount = int(args[2])
     except:
         return
 
-    if target not in data:
+    if not target:
         return
 
     data[target]["balance"] += amount
@@ -848,14 +865,14 @@ def remove_money(message):
     if len(args) != 3:
         return
 
-    target = args[1]
+    target = find_user_id(args[1])
 
     try:
         amount = int(args[2])
     except:
         return
 
-    if target not in data:
+    if not target:
         return
 
     data[target]["balance"] -= amount
@@ -881,16 +898,19 @@ def remove_money(message):
 @bot.message_handler(commands=["userinfo"])
 def user_info(message):
 
-    if not message.reply_to_message:
-        bot.reply_to(
-            message,
-            "Ответьте на сообщение пользователя."
-        )
-        return
+    args = message.text.split()
 
-    uid = str(message.reply_to_message.from_user.id)
+    if message.reply_to_message:
+        uid = str(message.reply_to_message.from_user.id)
+    else:
+        if len(args) < 2:
+            bot.reply_to(message, "Использование: /userinfo @user")
+            return
 
-    if uid not in data:
+        uid = find_user_id(args[1])
+
+    if not uid or uid not in data:
+        bot.reply_to(message, "Игрок не найден")
         return
 
     ensure_rep(uid)
@@ -906,13 +926,7 @@ def user_info(message):
         f"❌ Поражений: {user['loses']}"
     )
 
-    bot.reply_to(
-        message,
-        panel(
-            "ИНФОРМАЦИЯ",
-            text
-        )
-    )
+    bot.reply_to(message, panel("ИНФОРМАЦИЯ", text))
 
 
 # ==========================================
