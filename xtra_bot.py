@@ -254,7 +254,6 @@ def balance(message):
 @bot.message_handler(commands=["daily"])
 def daily(message):
     create_user(message.from_user)
-	
 	save_data(data)  # ← сохраняем
 
     uid = str(message.from_user.id)
