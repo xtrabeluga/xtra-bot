@@ -229,6 +229,8 @@ def profile(message):
 def balance(message):
     create_user(message.from_user)
 
+    save_data(data)  # ← сохраняем
+
     user = get_user(message.from_user.id)
 
     text = (
@@ -251,6 +253,8 @@ def balance(message):
 @bot.message_handler(commands=["daily"])
 def daily(message):
     create_user(message.from_user)
+	
+	save_data(data)  # ← сохраняем
 
     uid = str(message.from_user.id)
     user = get_user(message.from_user.id)
@@ -298,6 +302,8 @@ def daily(message):
 @bot.message_handler(commands=["farm"])
 def farm(message):
     create_user(message.from_user)
+
+	save_data(data)  # ← сохраняем
 
     uid = str(message.from_user.id)
     user = data[uid]
@@ -452,6 +458,8 @@ def pay(message):
 @bot.message_handler(commands=["top"])
 def top(message):
     create_user(message.from_user)
+
+	save_data(data)  # ← сохраняем
 
     # =========================
     # SORT PLAYERS
@@ -833,6 +841,8 @@ def inventory(message):
 def cases(message):
     create_user(message.from_user)
 
+    save_data(data)  # ← сохраняем
+
     uid = str(message.from_user.id)
     user = data[uid]
 
@@ -1094,7 +1104,7 @@ def clan_create(message):
     user_data[user_id]["clan"] = tag
     user_data[user_id]["clan_role"] = "owner"
 
-    save_data()
+    save_data(data)  # ← сохраняем
 
     bot.reply_to(message, panel(
         "🛡️ Клан создан",
@@ -1165,7 +1175,7 @@ def give_rep(message):
     user_data[target_id]["rep"] += 1
     user_data[user_id]["rep_given"]["last_time"] = now
 
-    save_data()
+    save_data(data)  # ← сохраняем
 
     # ===== RESPONSE =====
     bot.reply_to(message, panel(
@@ -1183,6 +1193,8 @@ def give_rep(message):
 @bot.message_handler(commands=['myrep'])
 def my_rep(message):
     user_id = str(message.from_user.id)
+
+    save_data(data)  # ← сохраняем
 
     user_data.setdefault(user_id, {})
     rep = user_data[user_id].get("rep", 0)
@@ -1279,7 +1291,7 @@ def add_money(message):
 
     user_data[target_id]["balance"] += amount
 
-    save_data()
+    save_data(data)  # ← сохраняем
 
     # ===== GET NAME SAFE =====
     try:
@@ -1372,7 +1384,7 @@ def remove_money(message):
 
     user_data[target_id]["balance"] -= amount
 
-    save_data()
+    save_data(data)  # ← сохраняем
 
     # ===== GET NAME SAFE =====
     try:
@@ -1471,6 +1483,8 @@ def chat_stats(message):
     user_id = str(message.from_user.id)
     args = message.text.split()
 
+    save_data(data)  # ← сохраняем
+
     target_id = None
 
     # Reply support
@@ -1520,7 +1534,7 @@ def message_stats(message):
 
     user_data[user_id]["messages"] = user_data[user_id].get("messages", 0) + 1
 
-    save_data()
+    save_data(data)  # ← сохраняем
 	
 # ==========================================
 # LEADERBOARD REP
@@ -1530,6 +1544,7 @@ def message_stats(message):
 def leaderboard_rep(message):
     ranking = sorted(
         user_data.items(),
+	    save_data(data)  # ← сохраняем
         key=lambda x: x[1].get("rep", 0),
         reverse=True
     )
