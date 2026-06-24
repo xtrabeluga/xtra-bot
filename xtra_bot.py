@@ -655,7 +655,7 @@ def casino(message):
             f"💰 Баланс: {user['balance']}"
         )
 
-	save_data(data)
+    save_data(data)
 
     bot.reply_to(
         message,
@@ -767,7 +767,7 @@ def buy(message):
         user["inventory"].append(name)
         result = f"🎁 {name} добавлен в инвентарь"
 
-	save_data(data)
+    save_data(data)
 
     # =========================
     # RESPONSE
@@ -837,7 +837,7 @@ def inventory(message):
 def cases(message):
     create_user(message.from_user)
 
-	save_data(data)  # ← сохраняем
+    save_data(data)  # ← сохраняем
 
     uid = str(message.from_user.id)
     user = data[uid]
@@ -935,7 +935,7 @@ def open_case(message):
         user["inventory"].append(reward["value"])
         result = f"🎁 Получено: {reward['value']}"
 
-	save_data(data)
+    save_data(data)
 
     # =========================
     # RESPONSE
@@ -1536,7 +1536,7 @@ def message_stats(message):
 def leaderboard_rep(message):
     ranking = sorted(
         user_data.items(),
-	    save_data(data)  # ← сохраняем
+        save_data(data)  # ← сохраняем
         key=lambda x: x[1].get("rep", 0),
         reverse=True
     )
@@ -1736,7 +1736,7 @@ def commands(message):
         )
     )
     
-save_data(data)
+    save_data(data)
 
 print("XTRA ELITA PRO ONLINE")
 
