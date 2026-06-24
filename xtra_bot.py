@@ -1534,9 +1534,9 @@ def message_stats(message):
 
 @bot.message_handler(commands=['leaderboardrep', 'reptop'])
 def leaderboard_rep(message):
+    # 1. Сначала сортируем данные
     ranking = sorted(
         user_data.items(),
-        save_data(data)  # ← сохраняем
         key=lambda x: x[1].get("rep", 0),
         reverse=True
     )
