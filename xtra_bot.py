@@ -7,10 +7,9 @@ from flask import Flask
 from telebot import types
 
 # --- НАСТРОЙКИ ---
-TOKEN = os.getenv("TOKEN")
-
+TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
-    raise ValueError("Ошибка: Переменная TOKEN не найдена в окружении!")
+    raise ValueError("Ошибка: Переменная BOT_TOKEN не найдена!")
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask('')
