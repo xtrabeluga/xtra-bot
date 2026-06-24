@@ -150,7 +150,7 @@ def panel(title, text, style="main"):
 @bot.message_handler(commands=["start"])
 def start(message):
     create_user(message.from_user)
-
+	
     bot.reply_to(
         message,
         panel(
@@ -455,8 +455,7 @@ def pay(message):
 @bot.message_handler(commands=["top"])
 def top(message):
     create_user(message.from_user)
-
-	save_data(data)  # ← сохраняем
+	save_data(data)
 
     # =========================
     # SORT PLAYERS
@@ -656,7 +655,7 @@ def casino(message):
             f"💰 Баланс: {user['balance']}"
         )
 
-    save_data(data)
+	save_data(data)
 
     bot.reply_to(
         message,
@@ -768,7 +767,7 @@ def buy(message):
         user["inventory"].append(name)
         result = f"🎁 {name} добавлен в инвентарь"
 
-    save_data(data)
+	save_data(data)
 
     # =========================
     # RESPONSE
@@ -838,7 +837,7 @@ def inventory(message):
 def cases(message):
     create_user(message.from_user)
 
-    save_data(data)  # ← сохраняем
+	save_data(data)  # ← сохраняем
 
     uid = str(message.from_user.id)
     user = data[uid]
@@ -936,7 +935,7 @@ def open_case(message):
         user["inventory"].append(reward["value"])
         result = f"🎁 Получено: {reward['value']}"
 
-    save_data(data)
+	save_data(data)
 
     # =========================
     # RESPONSE
@@ -1098,9 +1097,8 @@ def clan_create(message):
         "balance": 0
     }
 
-    user_data[user_id]["clan"] = tag
-    user_data[user_id]["clan_role"] = "owner"
-
+    data[user_id]["clan"] = tag
+    data[user_id]["clan_role"] = "owner"
     save_data(data)  # ← сохраняем
 
     bot.reply_to(message, panel(
@@ -1169,9 +1167,8 @@ def give_rep(message):
         return
 
     # ===== ADD REP =====
-    user_data[target_id]["rep"] += 1
-    user_data[user_id]["rep_given"]["last_time"] = now
-
+    data[target_id]["rep"] += 1
+    data[user_id]["rep_given"]["last_time"] = now
     save_data(data)  # ← сохраняем
 
     # ===== RESPONSE =====
@@ -1286,8 +1283,7 @@ def add_money(message):
     user_data.setdefault(target_id, {})
     user_data[target_id].setdefault("balance", 0)
 
-    user_data[target_id]["balance"] += amount
-
+    data[target_id]["balance"] += amount
     save_data(data)  # ← сохраняем
 
     # ===== GET NAME SAFE =====
@@ -1379,8 +1375,7 @@ def remove_money(message):
     if current_balance < amount:
         amount = current_balance  # не уходим в минус
 
-    user_data[target_id]["balance"] -= amount
-
+    data[target_id]["balance"] -= amount
     save_data(data)  # ← сохраняем
 
     # ===== GET NAME SAFE =====
@@ -1675,10 +1670,6 @@ def anti_flood(message):
 
         flood_cache[key] = []
 
-
-# ==========================================
-# COMMANDS LIST
-# ==========================================
 
 # ==========================================
 # COMMANDS LIST
