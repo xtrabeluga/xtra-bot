@@ -302,8 +302,6 @@ def daily(message):
 def farm(message):
     create_user(message.from_user)
 
-	save_data(data)  # ← сохраняем
-
     uid = str(message.from_user.id)
     user = data[uid]
 
