@@ -22,6 +22,8 @@ FLOOD_LIMIT = 5      # сообщений
 FLOOD_TIME = 10      # секунд
 MUTE_TIME = 60       # секунд
 
+DATA_FILE = "data.json"
+
 flood_cache = {}
 
 TOKEN = os.getenv("TOKEN")
