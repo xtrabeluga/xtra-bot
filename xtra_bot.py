@@ -32,7 +32,7 @@ if not TOKEN:
     raise Exception("TOKEN environment variable not found!")
 
 bot = telebot.TeleBot(TOKEN)
-
+user_data = {}
 bot.remove_webhook()
 
 
