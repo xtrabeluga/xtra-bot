@@ -9,6 +9,13 @@ import time
 import random
 from flask import Flask, request
 
+# ==========================================
+# LOAD DATA
+# ==========================================
+
+def load_data():
+    pass
+
 # ================= ANTI FLOOD =================
 
 FLOOD_LIMIT = 5      # сообщений
@@ -119,7 +126,22 @@ def panel_clean(title, text):
         f"{text}"
     )
 
+def panel(title, text, style="main"):
 
+    icons = {
+        "main": "🚀",
+        "help": "📜",
+        "economy": "💰",
+        "admin": "🛡️"
+    }
+
+    icon = icons.get(style, "✨")
+
+    return (
+        f"{icon} {title}\n\n"
+        f"{text}"
+    )
+	
 # =========================
 # START
 # =========================
