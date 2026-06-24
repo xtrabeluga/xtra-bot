@@ -3,10 +3,19 @@
 # pyTelegramBotAPI
 
 import telebot
-import json
 import os
+import json
 import time
-from datetime import datetime
+import random
+from flask import Flask, request
+
+# ================= ANTI FLOOD =================
+
+FLOOD_LIMIT = 5      # сообщений
+FLOOD_TIME = 10      # секунд
+MUTE_TIME = 60       # секунд
+
+flood_cache = {}
 
 TOKEN = os.getenv("TOKEN")
 
@@ -104,13 +113,10 @@ def get_user(uid):
 # DESIGN
 # =========================
 
-def panel(title, text):
+def panel_clean(title, text):
     return (
-        "━━━━━━━━━━━━━━━━━━\n"
         f"🔥 {title}\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"{text}\n"
-        "━━━━━━━━━━━━━━━━━━"
+        f"{text}"
     )
 
 
@@ -126,8 +132,16 @@ def start(message):
         message,
         panel(
             "XTRA ELITA",
-            f"Добро пожаловать, {message.from_user.first_name}!\n\n"
-            "Напиши /help для списка команд."
+            (
+                f"👋 Привет, {message.from_user.first_name}!\n\n"
+                "💰 Экономика • 🎲 Казино • 🛒 Магазин\n\n"
+                "🚀 Начни с:\n"
+                "/profile — твой профиль\n"
+                "/daily — ежедневная награда\n"
+                "/farm — фарм монет\n\n"
+                "📜 Напиши /help чтобы увидеть все команды"
+            ),
+            "👑"
         )
     )
 
@@ -169,14 +183,20 @@ def profile(message):
     user = get_user(message.from_user.id)
 
     text = (
-        f"👤 Игрок: {user['name']}\n"
+        f"👤 Игрок: {user['name']}\n\n"
         f"💰 Баланс: {user['balance']} XTRA\n"
-        f"📦 Предметов: {len(user['inventory'])}\n"
-        f"🏆 Побед: {user['wins']}\n"
-        f"❌ Поражений: {user['loses']}"
+        f"🎁 Кейсы: {user['cases']}\n"
+        f"📦 Инвентарь: {len(user['inventory'])}\n\n"
+        f"🏆 Победы: {user['wins']}\n"
+        f"❌ Поражения: {user['loses']}\n"
+        f"⭐ Репутация: {user.get('rep', 0)}\n\n"
+        f"🆔 ID: {user['id']}"
     )
 
-    bot.reply_to(message, panel("ПРОФИЛЬ", text))
+    bot.reply_to(
+        message,
+        panel("PROFILE", text, "👤")
+    )
 
 
 # =========================
@@ -189,14 +209,18 @@ def balance(message):
 
     user = get_user(message.from_user.id)
 
-    bot.reply_to(
-        message,
-        panel(
-            "БАЛАНС",
-            f"У вас {user['balance']} XTRA"
-        )
+    text = (
+        f"💰 Баланс\n\n"
+        f"💵 {user['balance']} XTRA\n\n"
+        f"👤 Игрок: {user['name']}\n"
+        f"🆔 ID: {user['id']}\n\n"
+        f"💡 Зарабатывай через /farm или /casino"
     )
 
+    bot.reply_to(
+        message,
+        panel("BALANCE", text, "💰")
+    )
 
 # =========================
 # DAILY
@@ -207,39 +231,42 @@ def daily(message):
     create_user(message.from_user)
 
     uid = str(message.from_user.id)
+    user = get_user(message.from_user.id)
 
     now = int(time.time())
 
+    # cooldown 24h
     if now - data[uid]["daily_time"] < 86400:
         left = 86400 - (now - data[uid]["daily_time"])
 
         hours = left // 3600
         minutes = (left % 3600) // 60
 
-        bot.reply_to(
-            message,
-            panel(
-                "DAILY",
-                f"Следующая награда через\n"
-                f"{hours}ч {minutes}м"
-            )
+        text = (
+            f"⏳ Награда уже получена\n\n"
+            f"🕒 Осталось: {hours}ч {minutes}м\n\n"
+            f"💡 Возвращайся позже за бонусом"
         )
+
+        bot.reply_to(message, panel("DAILY", text, "⏳"))
         return
 
-    reward = 1000
+    reward = 10000
 
     data[uid]["balance"] += reward
     data[uid]["daily_time"] = now
 
     save_data(data)
 
-    bot.reply_to(
-        message,
-        panel(
-            "DAILY",
-            f"+{reward} XTRA"
-        )
+    text = (
+        f"🎁 Ежедневная награда получена!\n\n"
+        f"💵 +{reward} XTRA\n\n"
+        f"👤 Игрок: {user['name']}\n"
+        f"💰 Новый баланс: {data[uid]['balance']}\n\n"
+        f"💡 Приходи завтра снова"
     )
+
+    bot.reply_to(message, panel("DAILY REWARD", text, "🎁"))
 
 
 # =========================
@@ -251,38 +278,61 @@ def farm(message):
     create_user(message.from_user)
 
     uid = str(message.from_user.id)
+    user = data[uid]
 
     now = int(time.time())
 
-    if now - data[uid]["farm_time"] < 15:
+    # =====================
+    # COOLDOWN 15 sec
+    # =====================
+    if now - user["farm_time"] < 15:
+        left = 15 - (now - user["farm_time"])
 
-        left = 15 - (now - data[uid]["farm_time"])
-
-        bot.reply_to(
-            message,
-            panel(
-                "ФАРМ",
-                f"Подождите {left} сек."
-            )
+        text = (
+            f"⏳ Слишком рано!\n\n"
+            f"🕒 Подожди: {left} сек\n\n"
+            f"💡 Фарм доступен каждые 15 секунд"
         )
+
+        bot.reply_to(message, panel("FARM", text, "⏳"))
         return
 
-    import random
+    # =====================
+    # REWARD SYSTEM
+    # =====================
+    base = random.randint(50, 5000)
 
-    reward = random.randint(50, 5000)
+    # шанс бонуса
+    bonus = 0
+    if random.randint(1, 100) <= 20:  # 20% шанс
+        bonus = random.randint(500, 2000)
 
-    data[uid]["balance"] += reward
-    data[uid]["farm_time"] = now
+    total = base + bonus
+
+    user["balance"] += total
+    user["farm_time"] = now
 
     save_data(data)
 
-    bot.reply_to(
-        message,
-        panel(
-            "ФАРМ",
-            f"Вы заработали {reward} XTRA"
+    # =====================
+    # TEXT UI
+    # =====================
+    if bonus > 0:
+        text = (
+            f"⛏ Удачный фарм!\n\n"
+            f"💵 База: {base} XTRA\n"
+            f"🎁 Бонус: +{bonus}\n\n"
+            f"💰 Итого: +{total} XTRA\n"
+            f"💰 Баланс: {user['balance']}"
         )
-    )
+    else:
+        text = (
+            f"⛏ Фарм завершён\n\n"
+            f"💵 Получено: +{total} XTRA\n\n"
+            f"💰 Баланс: {user['balance']}"
+        )
+
+    bot.reply_to(message, panel("FARM MINING", text, "⛏"))
 
 
 # =========================
@@ -297,12 +347,12 @@ def pay(message):
     sender = str(message.from_user.id)
 
     # =========================
-    # CASE 1: reply
+    # CASE 1: reply message
     # /pay 100
     # =========================
     if message.reply_to_message:
         if len(args) != 2:
-            bot.reply_to(message, "Использование: /pay СУММА")
+            bot.reply_to(message, "Использование: /pay СУММА (в ответ)")
             return
 
         target = str(message.reply_to_message.from_user.id)
@@ -310,10 +360,11 @@ def pay(message):
         try:
             amount = int(args[1])
         except:
+            bot.reply_to(message, "❌ Введите число")
             return
 
     # =========================
-    # CASE 2: username or id
+    # CASE 2: username / id
     # /pay @user 100
     # /pay 123 100
     # =========================
@@ -327,6 +378,7 @@ def pay(message):
         try:
             amount = int(args[2])
         except:
+            bot.reply_to(message, "❌ Введите число")
             return
 
     # =========================
@@ -337,6 +389,11 @@ def pay(message):
         return
 
     if amount <= 0:
+        bot.reply_to(message, "❌ Сумма должна быть больше 0")
+        return
+
+    if sender == target:
+        bot.reply_to(message, "❌ Нельзя перевести самому себе")
         return
 
     if data[sender]["balance"] < amount:
@@ -351,15 +408,20 @@ def pay(message):
 
     save_data(data)
 
-    bot.reply_to(
-        message,
-        panel(
-            "ПЕРЕВОД 💸",
-            f"Отправлено: {amount} XTRA\n"
-            f"Получатель: {target}"
-        )
+    # =========================
+    # USER INFO
+    # =========================
+    receiver_name = data[target]["name"]
+
+    text = (
+        f"💸 ПЕРЕВОД УСПЕШЕН\n\n"
+        f"👤 От: {data[sender]['name']}\n"
+        f"👤 Кому: {receiver_name}\n\n"
+        f"💵 Сумма: {amount} XTRA\n"
+        f"💰 Ваш баланс: {data[sender]['balance']}"
     )
 
+    bot.reply_to(message, panel("TRANSFER", text, "💸"))
 
 # =========================
 # TOP
@@ -367,29 +429,41 @@ def pay(message):
 
 @bot.message_handler(commands=["top"])
 def top(message):
+    create_user(message.from_user)
+
+    # =========================
+    # SORT PLAYERS
+    # =========================
     players = sorted(
         data.values(),
         key=lambda x: x["balance"],
         reverse=True
     )
 
+    medals = ["🥇", "🥈", "🥉"]
+
     text = ""
 
-    place = 1
+    for i, player in enumerate(players[:10]):
+        name = player.get("name", "Unknown")
+        balance = player.get("balance", 0)
 
-    for player in players[:10]:
-        text += (
-            f"{place}. {player['name']} — "
-            f"{player['balance']} XTRA\n"
-        )
-        place += 1
+        if i < 3:
+            icon = medals[i]
+        else:
+            icon = f"{i+1}."
+
+        text += f"{icon} {name} — 💰 {balance} XTRA\n"
+
+    # =========================
+    # EMPTY CHECK
+    # =========================
+    if not players:
+        text = "Пока нет игроков"
 
     bot.reply_to(
         message,
-        panel(
-            "ТОП БОГАЧЕЙ",
-            text if text else "Пусто"
-        )
+        panel("TOP PLAYERS", text, "🏆")
     )
     
 print("XTRA ELITA запущен!")
@@ -407,52 +481,65 @@ import random
 SHOP_ITEMS = {
     "vip": {
         "name": "VIP Статус",
-        "price": 5000
+        "price": 5000,
+        "emoji": "💎",
+        "desc": "x1.5 к наградам"
     },
     "m416": {
         "name": "M416 Glacier",
-        "price": 15000
+        "price": 15000,
+        "emoji": "🔫",
+        "desc": "Редкое оружие"
     },
     "xsuit": {
         "name": "X-SUIT",
-        "price": 50000
+        "price": 50000,
+        "emoji": "🛡",
+        "desc": "Легендарный скин"
     },
     "case": {
         "name": "Кейс",
-        "price": 3000
+        "price": 3000,
+        "emoji": "📦",
+        "desc": "Случайная награда"
     }
 }
 
 COMMANDS = {
     "👤 ИГРОК": {
-        "profile": "Профиль",
-        "balance": "Баланс",
+        "profile": "Профиль игрока",
+        "balance": "Показать баланс",
         "daily": "Ежедневная награда",
-        "rep": "Выдать репутацию",
+        "rep": "Выдать репутацию (reply)",
         "myrep": "Моя репутация"
     },
 
-    "⛏ ФАРМ / ИГРЫ": {
-        "farm": "Фарм монет",
-        "casino": "Казино",
-        "top": "Топ богатых",
-        "reptop": "Топ репутации"
+    "⛏ ФАРМ / ЭКОНОМИКА": {
+        "farm": "Заработок монет",
+        "casino": "Игровое казино",
+        "top": "Топ богатых игроков"
+    },
+
+    "💸 ПЕРЕВОДЫ": {
+        "pay": "Перевод монет игроку",
+        "userinfo": "Информация об игроке"
     },
 
     "🛒 МАГАЗИН": {
-        "shop": "Магазин",
+        "shop": "Открыть магазин",
         "buy": "Купить предмет",
         "inventory": "Инвентарь"
     },
 
     "🎁 КЕЙСЫ": {
-        "cases": "Мои кейсы",
+        "cases": "Показать кейсы",
         "open": "Открыть кейс"
     },
 
-    "💸 ПЕРЕВОДЫ": {
-        "pay": "Перевод монет",
-        "userinfo": "Информация о игроке"
+    "📊 СТАТ": {
+        "stats": "Статистика сервера",
+        "reptop": "Топ репутации",
+        "clan": "Информация о клане"
     }
 }
 
@@ -466,89 +553,88 @@ def casino(message):
     create_user(message.from_user)
 
     args = message.text.split()
+    uid = str(message.from_user.id)
+    user = data[uid]
 
+    # =========================
+    # CHECK INPUT
+    # =========================
     if len(args) != 2:
         bot.reply_to(
             message,
             panel(
-                "КАЗИНО",
-                "Использование:\n/casino СУММА"
+                "CASINO",
+                "Использование:\n/casino СУММА",
+                "🎲"
             )
         )
         return
 
-    uid = str(message.from_user.id)
-
     try:
         bet = int(args[1])
     except:
-        bot.reply_to(message, "Введите число.")
+        bot.reply_to(message, "❌ Введите число")
         return
 
     if bet <= 0:
         return
 
-    if data[uid]["balance"] < bet:
+    if user["balance"] < bet:
         bot.reply_to(
             message,
-            panel(
-                "КАЗИНО",
-                "Недостаточно средств."
-            )
+            panel("CASINO", "❌ Недостаточно средств", "🎲")
         )
         return
 
+    # =========================
+    # ROLL SYSTEM
+    # =========================
     roll = random.randint(1, 100)
 
+    # LOSE
     if roll <= 45:
-        data[uid]["balance"] -= bet
-        data[uid]["loses"] += 1
+        user["balance"] -= bet
+        user["loses"] += 1
 
-        save_data(data)
-
-        bot.reply_to(
-            message,
-            panel(
-                "КАЗИНО",
-                f"❌ Проигрыш\n\n"
-                f"-{bet} XTRA"
-            )
+        result_text = (
+            f"💥 ПРОИГРЫШ\n\n"
+            f"🎲 Шанс: {roll}/100\n"
+            f"💸 -{bet} XTRA\n\n"
+            f"💰 Баланс: {user['balance']}"
         )
 
+    # NORMAL WIN
     elif roll <= 85:
         win = bet * 2
+        user["balance"] += win
+        user["wins"] += 1
 
-        data[uid]["balance"] += bet
-        data[uid]["wins"] += 1
-
-        save_data(data)
-
-        bot.reply_to(
-            message,
-            panel(
-                "КАЗИНО",
-                f"🎉 Победа!\n\n"
-                f"+{bet} XTRA"
-            )
+        result_text = (
+            f"🎉 ПОБЕДА\n\n"
+            f"🎲 Шанс: {roll}/100\n"
+            f"💵 +{win} XTRA\n\n"
+            f"💰 Баланс: {user['balance']}"
         )
 
+    # JACKPOT
     else:
         jackpot = bet * 5
+        user["balance"] += jackpot
+        user["wins"] += 1
 
-        data[uid]["balance"] += jackpot
-        data[uid]["wins"] += 1
-
-        save_data(data)
-
-        bot.reply_to(
-            message,
-            panel(
-                "ДЖЕКПОТ",
-                f"💎 Вы сорвали джекпот!\n\n"
-                f"+{jackpot} XTRA"
-            )
+        result_text = (
+            f"💎 ДЖЕКПОТ!\n\n"
+            f"🎲 Шанс: {roll}/100\n"
+            f"🔥 +{jackpot} XTRA\n\n"
+            f"💰 Баланс: {user['balance']}"
         )
 
+    save_data(data)
+
+    bot.reply_to(
+        message,
+        panel("CASINO", result_text, "🎲")
+    )
 
 # ==========================================
 # SHOP
@@ -556,24 +642,33 @@ def casino(message):
 
 @bot.message_handler(commands=["shop"])
 def shop(message):
+    create_user(message.from_user)
 
-    text = ""
+    text = "🛒 МАГАЗИН XTRA ELITA\n\n"
 
+    # =========================
+    # ITEMS LIST
+    # =========================
     for item_id, item in SHOP_ITEMS.items():
+
+        emoji = item.get("emoji", "📦")
+        name = item.get("name", "Item")
+        price = item.get("price", 0)
+        desc = item.get("desc", "Нет описания")
+
         text += (
-            f"📦 {item_id}\n"
-            f"Название: {item['name']}\n"
-            f"Цена: {item['price']} XTRA\n\n"
+            f"{emoji} {name}\n"
+            f"💰 Цена: {price} XTRA\n"
+            f"📦 {desc}\n"
+            f"🆔 /buy {item_id}\n"
+            f"━━━━━━━━━━━━━━\n"
         )
 
-    text += "\nПокупка:\n/buy ID"
+    text += "\n💡 Покупка: /buy ID"
 
     bot.reply_to(
         message,
-        panel(
-            "МАГАЗИН",
-            text
-        )
+        panel("SHOP", text, "🛒")
     )
 
 
@@ -586,48 +681,80 @@ def buy(message):
     create_user(message.from_user)
 
     args = message.text.split()
-
-    if len(args) != 2:
-        bot.reply_to(message, "/buy ID")
-        return
-
     uid = str(message.from_user.id)
+    user = data[uid]
 
-    item_id = args[1].lower()
-
-    if item_id not in SHOP_ITEMS:
-        bot.reply_to(message, "Предмет не найден.")
-        return
-
-    item = SHOP_ITEMS[item_id]
-
-    if data[uid]["balance"] < item["price"]:
+    # =========================
+    # CHECK INPUT
+    # =========================
+    if len(args) != 2:
         bot.reply_to(
             message,
             panel(
-                "ПОКУПКА",
-                "Недостаточно денег."
+                "SHOP",
+                "Использование:\n/buy ID",
+                "🛒"
             )
         )
         return
 
-    data[uid]["balance"] -= item["price"]
+    item_id = args[1].lower()
+
+    # =========================
+    # CHECK ITEM
+    # =========================
+    if item_id not in SHOP_ITEMS:
+        bot.reply_to(
+            message,
+            panel("SHOP", "❌ Предмет не найден", "🛒")
+        )
+        return
+
+    item = SHOP_ITEMS[item_id]
+
+    name = item["name"]
+    price = item["price"]
+
+    # =========================
+    # CHECK MONEY
+    # =========================
+    if user["balance"] < price:
+        bot.reply_to(
+            message,
+            panel(
+                "SHOP",
+                "❌ Недостаточно XTRA",
+                "🛒"
+            )
+        )
+        return
+
+    # =========================
+    # BUY ITEM
+    # =========================
+    user["balance"] -= price
 
     if item_id == "case":
-        data[uid]["cases"] += 1
+        user["cases"] += 1
+        result = "📦 +1 кейс добавлен"
     else:
-        data[uid]["inventory"].append(item["name"])
+        user["inventory"].append(name)
+        result = f"🎁 {name} добавлен в инвентарь"
 
     save_data(data)
 
+    # =========================
+    # RESPONSE
+    # =========================
     bot.reply_to(
         message,
         panel(
-            "ПОКУПКА",
-            f"Куплено:\n{item['name']}"
+            "ПОКУПКА 🛒",
+            f"✔ Куплено: {name}\n"
+            f"💰 -{price} XTRA\n\n"
+            f"{result}"
         )
     )
-
 
 # ==========================================
 # INVENTORY
@@ -638,32 +765,43 @@ def inventory(message):
     create_user(message.from_user)
 
     uid = str(message.from_user.id)
+    user = data[uid]
 
-    inv = data[uid]["inventory"]
+    inv = user.get("inventory", [])
 
-    if len(inv) == 0:
+    # =========================
+    # EMPTY INVENTORY
+    # =========================
+    if not inv:
         bot.reply_to(
             message,
             panel(
-                "ИНВЕНТАРЬ",
-                "Пусто."
+                "ИНВЕНТАРЬ 🎒",
+                "Пусто.\n\nКупи предметы в /shop",
+                "🎒"
             )
         )
         return
 
-    text = ""
+    # =========================
+    # BUILD LIST
+    # =========================
+    text = f"🎒 У вас предметов: {len(inv)}\n\n"
 
     for i, item in enumerate(inv, start=1):
-        text += f"{i}. {item}\n"
+        text += f"{i}. 🎁 {item}\n"
 
+    # =========================
+    # RESPONSE
+    # =========================
     bot.reply_to(
         message,
         panel(
-            "ИНВЕНТАРЬ",
-            text
+            "ИНВЕНТАРЬ 🎒",
+            text,
+            "🎒"
         )
     )
-
 
 # ==========================================
 # MY CASES
@@ -674,15 +812,44 @@ def cases(message):
     create_user(message.from_user)
 
     uid = str(message.from_user.id)
+    user = data[uid]
+
+    count = user.get("cases", 0)
+
+    # =========================
+    # EMPTY CASES
+    # =========================
+    if count <= 0:
+        bot.reply_to(
+            message,
+            panel(
+                "КЕЙСЫ 📦",
+                "У вас нет кейсов.\n\nКупите их в /shop",
+                "📦"
+            )
+        )
+        return
+
+    # =========================
+    # INFO
+    # =========================
+    text = (
+        f"📦 Ваши кейсы: {count}\n\n"
+        "🎁 Что внутри:\n"
+        "• Монеты XTRA\n"
+        "• VIP / редкие предметы\n"
+        "• M416 / X-SUIT\n\n"
+        "👉 Используйте /open"
+    )
 
     bot.reply_to(
         message,
         panel(
-            "КЕЙСЫ",
-            f"У вас кейсов: {data[uid]['cases']}"
+            "КЕЙСЫ 📦",
+            text,
+            "📦"
         )
     )
-
 
 # ==========================================
 # OPEN CASE
@@ -693,56 +860,67 @@ def open_case(message):
     create_user(message.from_user)
 
     uid = str(message.from_user.id)
+    user = data[uid]
 
-    if data[uid]["cases"] <= 0:
+    # =========================
+    # CHECK CASES
+    # =========================
+    if user.get("cases", 0) <= 0:
         bot.reply_to(
             message,
             panel(
-                "КЕЙС",
-                "У вас нет кейсов."
+                "ОТКРЫТИЕ КЕЙСА 📦",
+                "❌ У вас нет кейсов\n\nКупите в /shop",
+                "📦"
             )
         )
         return
 
-    data[uid]["cases"] -= 1
+    # =========================
+    # REMOVE CASE
+    # =========================
+    user["cases"] -= 1
 
+    # =========================
+    # LOOT TABLE
+    # =========================
     rewards = [
-        ("1000 XTRA", "money", 1000),
-        ("5000 XTRA", "money", 5000),
-        ("10000 XTRA", "money", 10000),
-        ("VIP Статус", "item", "VIP Статус"),
-        ("M416 Glacier", "item", "M416 Glacier"),
-        ("X-SUIT", "item", "X-SUIT")
+        {"type": "money", "value": 1000, "text": "💰 +1000 XTRA"},
+        {"type": "money", "value": 5000, "text": "💰 +5000 XTRA"},
+        {"type": "money", "value": 10000, "text": "💰 +10000 XTRA"},
+        {"type": "item", "value": "VIP Статус", "text": "💎 VIP Статус"},
+        {"type": "item", "value": "M416 Glacier", "text": "🔫 M416 Glacier"},
+        {"type": "item", "value": "X-SUIT", "text": "🛡 X-SUIT"}
     ]
 
+    import random
     reward = random.choice(rewards)
 
-    if reward[1] == "money":
-        data[uid]["balance"] += reward[2]
-
-        text = (
-            f"🎁 Выпало:\n"
-            f"{reward[0]}"
-        )
+    # =========================
+    # APPLY REWARD
+    # =========================
+    if reward["type"] == "money":
+        user["balance"] += reward["value"]
+        result = reward["text"]
 
     else:
-        data[uid]["inventory"].append(reward[2])
-
-        text = (
-            f"🎁 Выпал предмет:\n"
-            f"{reward[2]}"
-        )
+        user["inventory"].append(reward["value"])
+        result = f"🎁 Получено: {reward['value']}"
 
     save_data(data)
 
+    # =========================
+    # RESPONSE
+    # =========================
     bot.reply_to(
         message,
         panel(
-            "ОТКРЫТИЕ КЕЙСА",
-            text
+            "КЕЙС ОТКРЫТ 📦",
+            f"🎲 Результат:\n{result}\n\n"
+            f"📦 Осталось кейсов: {user['cases']}",
+            "🎁"
         )
     )
-
 
 # ==========================================
 # GIVE CASE (ADMIN)
@@ -752,38 +930,102 @@ ADMINS = [
     8573898148
 ]
 
-@bot.message_handler(commands=["givecase"])
+@bot.message_handler(commands=['givecase'])
 def give_case(message):
+    user_id = message.from_user.id
 
-    if message.from_user.id not in ADMINS:
+    # ===== ADMIN CHECK =====
+    if user_id not in ADMINS:
+        bot.reply_to(message, panel(
+            "⛔ Доступ запрещён",
+            "У вас нет прав администратора.",
+            style="admin"
+        ))
         return
 
     args = message.text.split()
 
-    if len(args) != 3:
+    target_id = None
+    case_name = None
+    amount = 1
+
+    # ===== REPLY SUPPORT =====
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        args = args[1:]  # remove command
+
+    # ===== PARSE ARGS =====
+    if len(args) >= 2:
+        if not target_id:
+            target = args[1]
+
+            if target.isdigit():
+                target_id = int(target)
+            else:
+                target_id = find_user_id(target)  # username support
+
+        # case name
+        case_name = args[2] if len(args) >= 3 else None
+
+        # amount (optional)
+        if len(args) >= 4:
+            try:
+                amount = int(args[3])
+            except:
+                amount = 1
+
+    # ===== VALIDATION =====
+    if not target_id:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Укажи пользователя:\n"
+            "/givecase @user case_name [кол-во]\n"
+            "или ответом (reply)",
+            style="admin"
+        ))
         return
 
-    target = args[1]
+    if not case_name:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Укажи название кейса.",
+            style="admin"
+        ))
+        return
 
+    if amount <= 0:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Количество должно быть больше 0.",
+            style="admin"
+        ))
+        return
+
+    # ===== GIVE CASE =====
+    if target_id not in user_data:
+        user_data[target_id] = {"cases": {}}
+
+    user_data[target_id].setdefault("cases", {})
+    user_data[target_id]["cases"][case_name] = user_data[target_id]["cases"].get(case_name, 0) + amount
+
+    save_data()
+
+    # ===== GET USERNAME SAFE =====
     try:
-        amount = int(args[2])
+        target_user = bot.get_chat(target_id)
+        name = target_user.username or target_user.first_name
     except:
-        return
+        name = str(target_id)
 
-    if target not in data:
-        return
-
-    data[target]["cases"] += amount
-
-    save_data(data)
-
-    bot.reply_to(
-        message,
-        panel(
-            "АДМИН",
-            f"Выдано кейсов: {amount}"
-        )
-    )
+    # ===== SUCCESS MESSAGE =====
+    bot.send_message(message.chat.id, panel(
+        "🎁 Кейсы выданы",
+        f"👤 Пользователь: {name}\n"
+        f"📦 Кейс: {case_name}\n"
+        f"🔢 Кол-во: {amount}\n\n"
+        f"✅ Успешно добавлено в инвентарь",
+        style="admin"
+    ))
 
 # ==========================================
 # PART 3 - CLAN / ADMIN / REP / MODERATION
@@ -795,21 +1037,50 @@ def give_case(message):
 
 CLAN_NAME = "XTRA ELITA"
 
-@bot.message_handler(commands=["clan"])
-def clan_info(message):
-    create_user(message.from_user)
+@bot.message_handler(commands=['clan_create'])
+def clan_create(message):
+    user_id = str(message.from_user.id)
+    args = message.text.split()
 
-    members = len(data)
+    if len(args) < 3:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Использование:\n/clan_create TAG Название",
+            style="main"
+        ))
+        return
 
-    bot.reply_to(
-        message,
-        panel(
-            "КЛАН",
-            f"Название: {CLAN_NAME}\n"
-            f"Участников в базе: {members}\n"
-            f"Валюта: XTRA"
-        )
-    )
+    tag = args[1].upper()
+    name = " ".join(args[2:])
+
+    if tag in data.get("clans", {}):
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Такой клан уже существует.",
+            style="main"
+        ))
+        return
+
+    data.setdefault("clans", {})
+    data["clans"][tag] = {
+        "name": name,
+        "owner": int(user_id),
+        "members": [int(user_id)],
+        "balance": 0
+    }
+
+    user_data[user_id]["clan"] = tag
+    user_data[user_id]["clan_role"] = "owner"
+
+    save_data()
+
+    bot.reply_to(message, panel(
+        "🛡️ Клан создан",
+        f"🏷️ TAG: {tag}\n"
+        f"📛 Название: {name}\n"
+        f"👑 Владелец: {message.from_user.first_name}",
+        style="economy"
+    ))
 
 
 # ==========================================
@@ -821,268 +1092,492 @@ def ensure_rep(uid):
         data[uid]["rep"] = 0
 
 
-@bot.message_handler(commands=["rep"])
-def rep(message):
+import time
 
-    create_user(message.from_user)
+REP_COOLDOWN = 3600  # 1 час
 
-    if not message.reply_to_message:
-        bot.reply_to(
-            message,
-            "Ответьте на сообщение игрока."
-        )
+@bot.message_handler(commands=['rep'])
+def give_rep(message):
+    user_id = str(message.from_user.id)
+    args = message.text.split()
+
+    # ===== FIND TARGET =====
+    target_id = None
+
+    if message.reply_to_message:
+        target_id = str(message.reply_to_message.from_user.id)
+    elif len(args) >= 2:
+        target = args[1]
+
+        if target.isdigit():
+            target_id = target
+        else:
+            target_id = find_user_id(target)
+
+    # ===== VALIDATION =====
+    if not target_id:
+        bot.reply_to(message, "❌ Укажи пользователя (reply / @username / ID)")
         return
 
-    target = str(message.reply_to_message.from_user.id)
+    if target_id == user_id:
+        bot.reply_to(message, "❌ Нельзя дать реп самому себе")
+        return
 
-    if target not in data:
-        create_user(message.reply_to_message.from_user)
+    # ===== INIT USERS =====
+    user_data.setdefault(target_id, {})
+    user_data.setdefault(user_id, {})
 
-    ensure_rep(target)
+    user_data[target_id].setdefault("rep", 0)
+    user_data[user_id].setdefault("rep_given", {"last_time": 0})
 
-    data[target]["rep"] += 1
+    # ===== COOLDOWN =====
+    now = time.time()
+    last = user_data[user_id]["rep_given"]["last_time"]
 
-    save_data(data)
+    if now - last < REP_COOLDOWN:
+        remaining = int(REP_COOLDOWN - (now - last))
+        bot.reply_to(message, f"⏳ Подожди {remaining} сек перед следующей репутацией")
+        return
 
-    bot.reply_to(
-        message,
-        panel(
-            "РЕПУТАЦИЯ",
-            f"+1 репутация игроку\n"
-            f"Всего: {data[target]['rep']}"
-        )
-    )
+    # ===== ADD REP =====
+    user_data[target_id]["rep"] += 1
+    user_data[user_id]["rep_given"]["last_time"] = now
+
+    save_data()
+
+    # ===== RESPONSE =====
+    bot.reply_to(message, panel(
+        "⭐ Репутация",
+        f"➕ +1 REP пользователю {target_id}\n"
+        f"🔥 Теперь у него: {user_data[target_id]['rep']} REP",
+        style="economy"
+    ))
 
 
 # ==========================================
 # MY REP
 # ==========================================
 
-@bot.message_handler(commands=["myrep"])
+@bot.message_handler(commands=['myrep'])
 def my_rep(message):
-    create_user(message.from_user)
+    user_id = str(message.from_user.id)
 
-    uid = str(message.from_user.id)
+    user_data.setdefault(user_id, {})
+    rep = user_data[user_id].get("rep", 0)
 
-    ensure_rep(uid)
+    # ===== RANK (optional PRO feature) =====
+    if rep >= 100:
+        rank = "🏅 LEGEND"
+    elif rep >= 50:
+        rank = "🔥 PRO"
+    elif rep >= 20:
+        rank = "⭐ TRUSTED"
+    elif rep >= 5:
+        rank = "🙂 ACTIVE"
+    else:
+        rank = "🆕 NEW"
 
-    bot.reply_to(
-        message,
-        panel(
-            "РЕПУТАЦИЯ",
-            f"У вас {data[uid]['rep']} репутации"
-        )
-    )
+    # ===== RESPONSE =====
+    bot.reply_to(message, panel(
+        "⭐ Моя репутация",
+        f"👤 Твой ID: {user_id}\n"
+        f"⭐ REP: {rep}\n"
+        f"🏷️ Ранг: {rank}\n\n"
+        f"💡 Используй /rep чтобы получать репутацию",
+        style="economy"
+    ))
 
 
 # ==========================================
 # ADMIN ADD MONEY
 # ==========================================
 
-@bot.message_handler(commands=["addmoney"])
+@bot.message_handler(commands=['addmoney'])
 def add_money(message):
+    admin_id = str(message.from_user.id)
 
-    if message.from_user.id not in ADMINS:
+    # ===== ADMIN CHECK =====
+    if admin_id not in ADMINS:
+        bot.reply_to(message, panel(
+            "⛔ Доступ запрещён",
+            "У вас нет прав администратора.",
+            style="admin"
+        ))
         return
 
     args = message.text.split()
 
-    if len(args) != 3:
-        bot.reply_to(
-            message,
-            "/addmoney ID СУММА"
-        )
+    target_id = None
+    amount = 0
+
+    # ===== REPLY SUPPORT =====
+    if message.reply_to_message:
+        target_id = str(message.reply_to_message.from_user.id)
+        args = args[1:]
+
+    # ===== PARSE TARGET =====
+    if len(args) >= 2:
+        if not target_id:
+            target = args[1]
+
+            if target.isdigit():
+                target_id = target
+            else:
+                target_id = find_user_id(target)
+
+    # ===== PARSE AMOUNT =====
+    if len(args) >= 3:
+        try:
+            amount = int(args[2])
+        except:
+            amount = 0
+
+    # ===== VALIDATION =====
+    if not target_id:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Укажи пользователя:\n"
+            "/addmoney @user 1000\n"
+            "или reply + сумма",
+            style="admin"
+        ))
         return
 
-    target = find_user_id(args[1])
+    if amount <= 0:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Сумма должна быть больше 0.",
+            style="admin"
+        ))
+        return
 
+    # ===== INIT USER =====
+    user_data.setdefault(target_id, {})
+    user_data[target_id].setdefault("balance", 0)
+
+    user_data[target_id]["balance"] += amount
+
+    save_data()
+
+    # ===== GET NAME SAFE =====
     try:
-        amount = int(args[2])
+        target_user = bot.get_chat(int(target_id))
+        name = target_user.first_name
     except:
-        return
+        name = target_id
 
-    if not target:
-        return
-
-    data[target]["balance"] += amount
-
-    save_data(data)
-
-    bot.reply_to(
-        message,
-        panel(
-            "АДМИН",
-            f"Выдано {amount} XTRA"
-        )
-    )
-
+    # ===== RESPONSE =====
+    bot.send_message(message.chat.id, panel(
+        "💰 Баланс пополнен",
+        f"👤 Пользователь: {name}\n"
+        f"➕ +{amount} XTRA\n"
+        f"💳 Новый баланс: {user_data[target_id]['balance']}",
+        style="admin"
+    ))
 
 # ==========================================
 # REMOVE MONEY
 # ==========================================
 
-@bot.message_handler(commands=["removemoney"])
+@bot.message_handler(commands=['removemoney'])
 def remove_money(message):
+    admin_id = str(message.from_user.id)
 
-    if message.from_user.id not in ADMINS:
+    # ===== ADMIN CHECK =====
+    if admin_id not in ADMINS:
+        bot.reply_to(message, panel(
+            "⛔ Доступ запрещён",
+            "У вас нет прав администратора.",
+            style="admin"
+        ))
         return
 
     args = message.text.split()
 
-    if len(args) != 3:
+    target_id = None
+    amount = 0
+
+    # ===== REPLY SUPPORT =====
+    if message.reply_to_message:
+        target_id = str(message.reply_to_message.from_user.id)
+        args = args[1:]
+
+    # ===== PARSE TARGET =====
+    if len(args) >= 2:
+        if not target_id:
+            target = args[1]
+
+            if target.isdigit():
+                target_id = target
+            else:
+                target_id = find_user_id(target)
+
+    # ===== PARSE AMOUNT =====
+    if len(args) >= 3:
+        try:
+            amount = int(args[2])
+        except:
+            amount = 0
+
+    # ===== VALIDATION =====
+    if not target_id:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Укажи пользователя:\n"
+            "/removemoney @user 1000\n"
+            "или reply + сумма",
+            style="admin"
+        ))
         return
 
-    target = find_user_id(args[1])
+    if amount <= 0:
+        bot.reply_to(message, panel(
+            "❌ Ошибка",
+            "Сумма должна быть больше 0.",
+            style="admin"
+        ))
+        return
 
+    # ===== INIT USER =====
+    user_data.setdefault(target_id, {})
+    user_data[target_id].setdefault("balance", 0)
+
+    current_balance = user_data[target_id]["balance"]
+
+    # ===== SAFE REMOVE =====
+    if current_balance < amount:
+        amount = current_balance  # не уходим в минус
+
+    user_data[target_id]["balance"] -= amount
+
+    save_data()
+
+    # ===== GET NAME SAFE =====
     try:
-        amount = int(args[2])
+        target_user = bot.get_chat(int(target_id))
+        name = target_user.first_name
     except:
-        return
+        name = target_id
 
-    if not target:
-        return
-
-    data[target]["balance"] -= amount
-
-    if data[target]["balance"] < 0:
-        data[target]["balance"] = 0
-
-    save_data(data)
-
-    bot.reply_to(
-        message,
-        panel(
-            "АДМИН",
-            f"Снято {amount} XTRA"
-        )
-    )
-
+    # ===== RESPONSE =====
+    bot.send_message(message.chat.id, panel(
+        "💸 Баланс уменьшен",
+        f"👤 Пользователь: {name}\n"
+        f"➖ -{amount} XTRA\n"
+        f"💳 Новый баланс: {user_data[target_id]['balance']}",
+        style="admin"
+    ))
 
 # ==========================================
 # USER INFO
 # ==========================================
 
-@bot.message_handler(commands=["userinfo"])
+@bot.message_handler(commands=['userinfo'])
 def user_info(message):
-
+    user_id = str(message.from_user.id)
     args = message.text.split()
 
+    target_id = None
+
+    # ===== REPLY SUPPORT =====
     if message.reply_to_message:
-        uid = str(message.reply_to_message.from_user.id)
+        target_id = str(message.reply_to_message.from_user.id)
+
+    # ===== ARG SUPPORT =====
+    elif len(args) >= 2:
+        target = args[1]
+
+        if target.isdigit():
+            target_id = target
+        else:
+            target_id = find_user_id(target)
+
+    # ===== DEFAULT SELF =====
+    if not target_id:
+        target_id = user_id
+
+    user_data.setdefault(target_id, {})
+
+    # ===== DATA SAFE GET =====
+    balance = user_data[target_id].get("balance", 0)
+    rep = user_data[target_id].get("rep", 0)
+
+    clan = user_data[target_id].get("clan")
+    clan_text = clan if clan else "Нет клана"
+
+    cases = user_data[target_id].get("cases", {})
+    total_cases = sum(cases.values()) if cases else 0
+
+    # ===== RANK SYSTEM (from REP) =====
+    if rep >= 100:
+        rank = "🏅 LEGEND"
+    elif rep >= 50:
+        rank = "🔥 PRO"
+    elif rep >= 20:
+        rank = "⭐ TRUSTED"
+    elif rep >= 5:
+        rank = "🙂 ACTIVE"
     else:
-        if len(args) < 2:
-            bot.reply_to(message, "Использование: /userinfo @user")
-            return
+        rank = "🆕 NEW"
 
-        uid = find_user_id(args[1])
+    # ===== GET NAME SAFE =====
+    try:
+        tg_user = bot.get_chat(int(target_id))
+        name = tg_user.first_name
+    except:
+        name = target_id
 
-    if not uid or uid not in data:
-        bot.reply_to(message, "Игрок не найден")
-        return
-
-    ensure_rep(uid)
-
-    user = data[uid]
-
-    text = (
-        f"👤 {user['name']}\n"
-        f"💰 Баланс: {user['balance']}\n"
-        f"🎁 Кейсы: {user['cases']}\n"
-        f"⭐ Репутация: {user['rep']}\n"
-        f"🏆 Побед: {user['wins']}\n"
-        f"❌ Поражений: {user['loses']}"
-    )
-
-    bot.reply_to(message, panel("ИНФОРМАЦИЯ", text))
+    # ===== OUTPUT =====
+    bot.reply_to(message, panel(
+        "👤 USER INFO",
+        f"👤 Имя: {name}\n"
+        f"🆔 ID: {target_id}\n\n"
+        f"💰 Баланс: {balance} XTRA\n"
+        f"⭐ REP: {rep} ({rank})\n"
+        f"🛡️ Клан: {clan_text}\n"
+        f"📦 Кейсы: {total_cases}\n",
+        style="economy"
+    ))
 
 
 # ==========================================
 # CHAT STATS
 # ==========================================
 
-@bot.message_handler(commands=["stats"])
-def stats(message):
+@bot.message_handler(commands=['chatstats'])
+def chat_stats(message):
+    user_id = str(message.from_user.id)
+    args = message.text.split()
 
-    total_money = 0
-    total_cases = 0
+    target_id = None
 
-    for uid in data:
-        total_money += data[uid]["balance"]
-        total_cases += data[uid]["cases"]
+    # Reply support
+    if message.reply_to_message:
+        target_id = str(message.reply_to_message.from_user.id)
 
-    bot.reply_to(
-        message,
-        panel(
-            "СТАТИСТИКА",
-            f"Игроков: {len(data)}\n"
-            f"Монет в экономике: {total_money}\n"
-            f"Кейсов: {total_cases}"
-        )
-    )
+    # Username / ID support
+    elif len(args) >= 2:
+        target = args[1]
 
+        if target.isdigit():
+            target_id = target
+        else:
+            target_id = find_user_id(target)
 
+    # Self by default
+    if not target_id:
+        target_id = user_id
+
+    user_data.setdefault(target_id, {})
+
+    messages = user_data[target_id].get("messages", 0)
+    balance = user_data[target_id].get("balance", 0)
+    rep = user_data[target_id].get("rep", 0)
+
+    try:
+        user = bot.get_chat(int(target_id))
+        name = user.first_name
+    except:
+        name = target_id
+
+    bot.reply_to(message, panel(
+        "📊 CHAT STATS",
+        f"👤 Пользователь: {name}\n"
+        f"🆔 ID: {target_id}\n\n"
+        f"💬 Сообщений: {messages:,}\n"
+        f"💰 Баланс: {balance:,} XTRA\n"
+        f"⭐ REP: {rep:,}",
+        style="main"
+    ))
+
+@bot.message_handler(func=lambda m: True, content_types=['text'])
+def message_stats(message):
+    user_id = str(message.from_user.id)
+
+    user_data.setdefault(user_id, {})
+
+    user_data[user_id]["messages"] = user_data[user_id].get("messages", 0) + 1
+
+    save_data()
+	
 # ==========================================
 # LEADERBOARD REP
 # ==========================================
 
-@bot.message_handler(commands=["reptop"])
-def rep_top(message):
-
-    players = []
-
-    for uid in data:
-
-        if "rep" not in data[uid]:
-            data[uid]["rep"] = 0
-
-        players.append(data[uid])
-
-    players = sorted(
-        players,
-        key=lambda x: x["rep"],
+@bot.message_handler(commands=['leaderboardrep', 'reptop'])
+def leaderboard_rep(message):
+    ranking = sorted(
+        user_data.items(),
+        key=lambda x: x[1].get("rep", 0),
         reverse=True
     )
 
     text = ""
+    place = 1
 
-    pos = 1
+    medals = {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉"
+    }
 
-    for player in players[:10]:
+    for uid, data in ranking:
+        rep = data.get("rep", 0)
+
+        if rep <= 0:
+            continue
+
+        if place > 10:
+            break
+
+        try:
+            user = bot.get_chat(int(uid))
+            name = user.first_name
+        except:
+            name = f"ID {uid}"
+
+        icon = medals.get(place, f"{place}.")
 
         text += (
-            f"{pos}. {player['name']} — "
-            f"{player['rep']} ⭐\n"
+            f"{icon} {name}\n"
+            f"⭐ REP: {rep}\n\n"
         )
 
-        pos += 1
+        place += 1
 
-    bot.reply_to(
-        message,
-        panel(
-            "ТОП РЕПУТАЦИИ",
-            text
-        )
-    )
+    if not text:
+        text = "Пока никто не получил репутацию."
+
+    bot.reply_to(message, panel(
+        "🏆 LEADERBOARD REP",
+        text,
+        style="economy"
+    ))
 
 
 # ==========================================
 # WELCOME NEW MEMBERS
 # ==========================================
 
-@bot.message_handler(content_types=["new_chat_members"])
-def welcome(message):
+@bot.message_handler(content_types=['new_chat_members'])
+def welcome_new_member(message):
+    for member in message.new_chat_members:
 
-    for user in message.new_chat_members:
+        name = member.first_name
 
-        create_user(user)
-
-        bot.send_message(
-            message.chat.id,
-            panel(
-                "ДОБРО ПОЖАЛОВАТЬ",
-                f"{user.first_name}, добро пожаловать в {CLAN_NAME}!"
-            )
+        text = panel(
+            "🎉 Добро пожаловать!",
+            f"👋 Привет, {name}!\n\n"
+            f"Добро пожаловать в сообщество XTRA ELITA.\n\n"
+            f"📜 Используй /help чтобы посмотреть команды.\n"
+            f"💰 Начни зарабатывать через /daily и /farm.\n"
+            f"🏆 Поднимай REP через /rep.\n"
+            f"🛡️ Вступай в кланы и участвуй в жизни сообщества.\n\n"
+            f"Желаем приятного общения! 🚀",
+            style="main"
         )
+
+        bot.send_message(message.chat.id, text)
 
 
 # ==========================================
@@ -1091,24 +1586,65 @@ def welcome(message):
 
 user_cooldowns = {}
 
-@bot.message_handler(func=lambda m: True)
+@bot.message_handler(func=lambda m: m.chat.type in ["group", "supergroup"])
 def anti_flood(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
 
-    uid = message.from_user.id
+    # Не проверяем админов
+    if str(user_id) in ADMINS:
+        return
 
     now = time.time()
 
-    if uid not in user_cooldowns:
-        user_cooldowns[uid] = now
-        return
+    key = f"{chat_id}:{user_id}"
 
-    diff = now - user_cooldowns[uid]
+    if key not in flood_cache:
+        flood_cache[key] = []
 
-    user_cooldowns[uid] = now
+    # Оставляем только свежие сообщения
+    flood_cache[key] = [
+        t for t in flood_cache[key]
+        if now - t < FLOOD_TIME
+    ]
 
-    if diff < 0.5:
-        return
+    flood_cache[key].append(now)
 
+    # Проверка лимита
+    if len(flood_cache[key]) >= FLOOD_LIMIT:
+
+        try:
+            until_date = int(now + MUTE_TIME)
+
+            bot.restrict_chat_member(
+                chat_id,
+                user_id,
+                until_date=until_date,
+                permissions=telebot.types.ChatPermissions(
+                    can_send_messages=False
+                )
+            )
+
+            bot.send_message(
+                chat_id,
+                panel(
+                    "🚫 Анти-Флуд",
+                    f"👤 {message.from_user.first_name}\n"
+                    f"⚠️ Слишком много сообщений\n"
+                    f"🔇 Мут: {MUTE_TIME} сек",
+                    style="admin"
+                )
+            )
+
+        except Exception as e:
+            print("Flood Error:", e)
+
+        flood_cache[key] = []
+
+
+# ==========================================
+# COMMANDS LIST
+# ==========================================
 
 # ==========================================
 # COMMANDS LIST
@@ -1118,45 +1654,60 @@ def anti_flood(message):
 def commands(message):
 
     text = """
-/start - запуск
+🚀 ОСНОВНЫЕ
+
+/start - запуск бота
 /help - помощь
+/commands - список команд
+
+💰 ЭКОНОМИКА
 
 /profile - профиль
 /balance - баланс
 /daily - ежедневная награда
 /farm - фарм монет
-/pay - перевод
+/pay - перевод монет
 /top - топ богатых
-
 /casino СУММА - казино
 
+🛒 МАГАЗИН
+
 /shop - магазин
-/buy ID - купить
+/buy ID - купить предмет
 /inventory - инвентарь
 
-/cases - кейсы
-/open - открыть кейс
+📦 КЕЙСЫ
 
-/rep - дать репутацию
+/cases - список кейсов
+/open ID - открыть кейс
+
+⭐ РЕПУТАЦИЯ
+
+/rep - выдать репутацию
 /myrep - моя репутация
 /reptop - топ репутации
 
-/clan - информация о клане
-/stats - статистика
+🛡️ КЛАНЫ
 
-/userinfo - информация о игроке
+/clan_create - создать клан
+/clan_join - вступить в клан
+/clan_leave - покинуть клан
+/clan_info - информация о клане
+/clan_top - топ кланов
 
-АДМИН:
-/addmoney
-/removemoney
-/givecase
+📊 СТАТИСТИКА
+
+/userinfo - информация об игроке
+/chatstats - статистика игрока
+/chattop - топ активности
 """
 
     bot.reply_to(
         message,
         panel(
-            "КОМАНДЫ",
-            text
+            "📜 СПИСОК КОМАНД",
+            text,
+            style="help"
         )
     )
     
