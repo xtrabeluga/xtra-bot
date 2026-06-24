@@ -456,7 +456,6 @@ def pay(message):
 @bot.message_handler(commands=["top"])
 def top(message):
     create_user(message.from_user)
-	save_data(data)
 
     # =========================
     # SORT PLAYERS
