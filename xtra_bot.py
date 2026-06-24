@@ -8,9 +8,10 @@ from telebot import types
 
 # --- НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ ---
 # Берем токен из переменных окружения (безопасный метод для Render)
-TOKEN = os.environ.get('BOT_TOKEN')
+TOKEN = os.getenv("TOKEN")
+
 if not TOKEN:
-    raise ValueError("Ошибка: Переменная BOT_TOKEN не найдена в окружении!")
+    raise ValueError("Ошибка: Переменная TOKEN не найдена в окружении!")
 
 bot = telebot.TeleBot(TOKEN)
 DATA_FILE = 'users_data.json'
