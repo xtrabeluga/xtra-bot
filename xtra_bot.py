@@ -74,6 +74,7 @@ def save_data(data):
 
 
 data = load_data()
+user_data = data
 
 
 # =========================
