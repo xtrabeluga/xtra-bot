@@ -32,7 +32,7 @@ if not TOKEN:
     raise Exception("TOKEN environment variable not found!")
 
 bot = telebot.TeleBot(TOKEN)
-user_data = {}
+
 bot.remove_webhook()
 
 
@@ -74,7 +74,6 @@ def save_data(data):
 
 
 data = load_data()
-user_data = data
 
 
 # =========================
@@ -103,8 +102,6 @@ def create_user(user):
 			
 			"rep": 0,
         }
-
-        save_data(data)
 
         save_data(data)
 
@@ -1030,11 +1027,11 @@ def give_case(message):
         return
 
     # ===== GIVE CASE =====
-    if target_id not in user_data:
-        user_data[target_id] = {"cases": {}}
+    if target_id not in data:
+        data[target_id] = {"cases": {}}
 
-    user_data[target_id].setdefault("cases", {})
-    user_data[target_id]["cases"][case_name] = user_data[target_id]["cases"].get(case_name, 0) + amount
+    data[target_id].setdefault("cases", {})
+    data[target_id]["cases"][case_name] = data[target_id]["cases"].get(case_name, 0) + amount
 
     save_data()
 
@@ -1151,15 +1148,15 @@ def give_rep(message):
         return
 
     # ===== INIT USERS =====
-    user_data.setdefault(target_id, {})
-    user_data.setdefault(user_id, {})
+    data.setdefault(target_id, {})
+    data.setdefault(user_id, {})
 
-    user_data[target_id].setdefault("rep", 0)
-    user_data[user_id].setdefault("rep_given", {"last_time": 0})
+    data[target_id].setdefault("rep", 0)
+    data[user_id].setdefault("rep_given", {"last_time": 0})
 
     # ===== COOLDOWN =====
     now = time.time()
-    last = user_data[user_id]["rep_given"]["last_time"]
+    last = data[user_id]["rep_given"]["last_time"]
 
     if now - last < REP_COOLDOWN:
         remaining = int(REP_COOLDOWN - (now - last))
@@ -1175,7 +1172,7 @@ def give_rep(message):
     bot.reply_to(message, panel(
         "⭐ Репутация",
         f"➕ +1 REP пользователю {target_id}\n"
-        f"🔥 Теперь у него: {user_data[target_id]['rep']} REP",
+        f"🔥 Теперь у него: {data[target_id]['rep']} REP",
         style="economy"
     ))
 
@@ -1190,8 +1187,8 @@ def my_rep(message):
 
     save_data(data)  # ← сохраняем
 
-    user_data.setdefault(user_id, {})
-    rep = user_data[user_id].get("rep", 0)
+    data.setdefault(user_id, {})
+    rep = data[user_id].get("rep", 0)
 
     # ===== RANK (optional PRO feature) =====
     if rep >= 100:
@@ -1280,8 +1277,8 @@ def add_money(message):
         return
 
     # ===== INIT USER =====
-    user_data.setdefault(target_id, {})
-    user_data[target_id].setdefault("balance", 0)
+    data.setdefault(target_id, {})
+    data[target_id].setdefault("balance", 0)
 
     data[target_id]["balance"] += amount
     save_data(data)  # ← сохраняем
@@ -1298,7 +1295,7 @@ def add_money(message):
         "💰 Баланс пополнен",
         f"👤 Пользователь: {name}\n"
         f"➕ +{amount} XTRA\n"
-        f"💳 Новый баланс: {user_data[target_id]['balance']}",
+        f"💳 Новый баланс: {data[target_id]['balance']}",
         style="admin"
     ))
 
@@ -1366,10 +1363,10 @@ def remove_money(message):
         return
 
     # ===== INIT USER =====
-    user_data.setdefault(target_id, {})
-    user_data[target_id].setdefault("balance", 0)
+    data.setdefault(target_id, {})
+    data[target_id].setdefault("balance", 0)
 
-    current_balance = user_data[target_id]["balance"]
+    current_balance = data[target_id]["balance"]
 
     # ===== SAFE REMOVE =====
     if current_balance < amount:
@@ -1390,7 +1387,7 @@ def remove_money(message):
         "💸 Баланс уменьшен",
         f"👤 Пользователь: {name}\n"
         f"➖ -{amount} XTRA\n"
-        f"💳 Новый баланс: {user_data[target_id]['balance']}",
+        f"💳 Новый баланс: {data[target_id]['balance']}",
         style="admin"
     ))
 
@@ -1422,16 +1419,16 @@ def user_info(message):
     if not target_id:
         target_id = user_id
 
-    user_data.setdefault(target_id, {})
+    data.setdefault(target_id, {})
 
     # ===== DATA SAFE GET =====
-    balance = user_data[target_id].get("balance", 0)
-    rep = user_data[target_id].get("rep", 0)
+    balance = data[target_id].get("balance", 0)
+    rep = data[target_id].get("rep", 0)
 
-    clan = user_data[target_id].get("clan")
+    clan = data[target_id].get("clan")
     clan_text = clan if clan else "Нет клана"
 
-    cases = user_data[target_id].get("cases", {})
+    cases = data[target_id].get("cases", {})
     total_cases = sum(cases.values()) if cases else 0
 
     # ===== RANK SYSTEM (from REP) =====
@@ -1496,11 +1493,11 @@ def chat_stats(message):
     if not target_id:
         target_id = user_id
 
-    user_data.setdefault(target_id, {})
+    data.setdefault(target_id, {})
 
-    messages = user_data[target_id].get("messages", 0)
-    balance = user_data[target_id].get("balance", 0)
-    rep = user_data[target_id].get("rep", 0)
+    messages = data[target_id].get("messages", 0)
+    balance = data[target_id].get("balance", 0)
+    rep = data[target_id].get("rep", 0)
 
     try:
         user = bot.get_chat(int(target_id))
@@ -1522,9 +1519,9 @@ def chat_stats(message):
 def message_stats(message):
     user_id = str(message.from_user.id)
 
-    user_data.setdefault(user_id, {})
+    data.setdefault(user_id, {})
 
-    user_data[user_id]["messages"] = user_data[user_id].get("messages", 0) + 1
+    data[user_id]["messages"] = data[user_id].get("messages", 0) + 1
 
     save_data(data)  # ← сохраняем
 	
@@ -1534,10 +1531,9 @@ def message_stats(message):
 
 @bot.message_handler(commands=['leaderboardrep', 'reptop'])
 def leaderboard_rep(message):
-    # 1. Сначала сортируем данные
     ranking = sorted(
-        user_data.items(),
-        key=lambda x: x[1].get("rep", 0),
+        data.items(),
+        ey=lambda x: x[1].get("rep", 0),
         reverse=True
     )
 
